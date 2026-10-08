@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// Firestore is written only by the Northbridge server through the Admin SDK,
+// which bypasses these rules. Denying every client read/write means the
+// database stays unreachable even if a browser key or the Firebase web SDK is
+// ever added to the client by mistake.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

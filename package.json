@@ -1,0 +1,38 @@
+{
+  "name": "northbridge-bank",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Northbridge Bank - full-stack online banking platform (customer portal + admin panel)",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --workspace server run dev",
+    "dev:client": "npm --workspace client run dev",
+    "build": "npm --workspace client run build",
+    "start": "npm --workspace server run start",
+    "migrate": "npm --workspace server run migrate",
+    "seed": "npm --workspace server run seed",
+    "seed:admin": "npm --workspace server run seed:admin",
+    "firestore:backfill": "npm --workspace server run firestore:backfill",
+    "test": "npm --workspace server run test",
+    "smoke": "node scripts/smoke.mjs",
+    "check:svg": "node scripts/check-svg.mjs",
+    "lint": "eslint server/src server/test client/src scripts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^14.0.0"
+  }
+}

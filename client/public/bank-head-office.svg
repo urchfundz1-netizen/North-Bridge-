@@ -1,0 +1,142 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 900 900"
+  width="900"
+  height="900"
+  role="img"
+  aria-label="The NorthBridge Bank head office: a stone banking hall with a clock in its pediment, a colonnade of four columns, a lit entrance and a wide flight of steps"
+>
+  <title>NorthBridge Bank head office</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d3272" />
+      <stop offset="0.5" stop-color="#0b2a5b" />
+      <stop offset="1" stop-color="#061a3d" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.56" r="0.6">
+      <stop offset="0" stop-color="#4a8ada" stop-opacity="0.5" />
+      <stop offset="1" stop-color="#4a8ada" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#dae5f4" />
+    </linearGradient>
+    <linearGradient id="stoneShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfdcf0" />
+      <stop offset="1" stop-color="#b2c5e0" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9cd80" />
+      <stop offset="1" stop-color="#c8a24a" />
+    </linearGradient>
+    <linearGradient id="lit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf3d8" />
+      <stop offset="1" stop-color="#e6c877" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background: full bleed, so cropping never reveals an edge. -->
+  <rect width="900" height="900" fill="url(#sky)" />
+  <rect width="900" height="900" fill="url(#glow)" />
+
+  <!--
+    The building sits inside a central safe area. `object-fit: cover` crops
+    whichever axis is in excess, so anything essential must survive losing up
+    to ~14% off each edge. Sky and ground are deliberately full bleed: losing
+    a slice of either reads as a wider view, not as damage.
+  -->
+  <g id="building">
+    <!-- Pediment -->
+    <path d="M150 496 L450 400 L750 496 Z" fill="url(#stone)" />
+    <path d="M182 488 L450 413 L718 488 Z" fill="#0e3573" />
+    <path d="M200 483 L450 420 L700 483" fill="none" stroke="url(#gold)" stroke-width="3.5" />
+
+    <!-- Clock in the tympanum -->
+    <circle cx="450" cy="461" r="33" fill="url(#gold)" />
+    <circle cx="450" cy="461" r="25" fill="#fbfdff" />
+    <path d="M450 461 V442" stroke="#0b2a5b" stroke-width="4" stroke-linecap="round" />
+    <path d="M450 461 L465 468" stroke="#0b2a5b" stroke-width="4" stroke-linecap="round" />
+    <circle cx="450" cy="461" r="3" fill="#0b2a5b" />
+
+    <!-- Entablature, carrying the engraved wordmark -->
+    <rect x="155" y="496" width="590" height="44" fill="url(#stoneShade)" />
+    <rect x="155" y="496" width="590" height="5" fill="#f4f8fd" />
+    <text
+      x="450"
+      y="525"
+      text-anchor="middle"
+      font-family="Georgia, 'Times New Roman', serif"
+      font-size="20"
+      font-weight="700"
+      letter-spacing="5"
+      fill="#0b2a5b"
+    >NORTHBRIDGE BANK</text>
+
+    <!-- Recessed wall behind the colonnade -->
+    <rect x="200" y="540" width="500" height="132" fill="#0e3573" />
+
+    <!-- Lit windows between the outer columns -->
+    <rect x="272" y="576" width="72" height="70" rx="6" fill="url(#lit)" />
+    <rect x="556" y="576" width="72" height="70" rx="6" fill="url(#lit)" />
+    <path d="M308 576 V646 M592 576 V646" stroke="#b8860b" stroke-width="4" />
+
+    <!-- Entrance -->
+    <path d="M395 672 V600 A55 55 0 0 1 505 600 V672 Z" fill="url(#gold)" />
+    <path d="M405 672 V603 A45 45 0 0 1 495 603 V672 Z" fill="#fdf3d8" />
+    <rect x="444" y="612" width="12" height="60" rx="6" fill="#c8a24a" />
+
+    <!-- Colonnade: four columns flanking the entrance -->
+    <g fill="url(#stone)">
+      <rect x="225" y="540" width="40" height="132" />
+      <rect x="350" y="540" width="40" height="132" />
+      <rect x="510" y="540" width="40" height="132" />
+      <rect x="635" y="540" width="40" height="132" />
+    </g>
+    <g fill="#a9bbd7">
+      <rect x="253" y="540" width="12" height="132" />
+      <rect x="378" y="540" width="12" height="132" />
+      <rect x="538" y="540" width="12" height="132" />
+      <rect x="663" y="540" width="12" height="132" />
+    </g>
+    <g fill="url(#stoneShade)">
+      <rect x="219" y="540" width="52" height="15" />
+      <rect x="344" y="540" width="52" height="15" />
+      <rect x="504" y="540" width="52" height="15" />
+      <rect x="629" y="540" width="52" height="15" />
+      <rect x="219" y="657" width="52" height="15" />
+      <rect x="344" y="657" width="52" height="15" />
+      <rect x="504" y="657" width="52" height="15" />
+      <rect x="629" y="657" width="52" height="15" />
+    </g>
+
+    <!-- Stylobate -->
+    <rect x="200" y="672" width="500" height="18" fill="url(#stoneShade)" />
+    <rect x="200" y="672" width="500" height="4" fill="#f4f8fd" />
+  </g>
+
+  <!--
+    Steps and ground run the full width on purpose. The panel this artwork sits
+    in is often narrower than the canvas is wide, so cover crops the sides;
+    full-bleed steps make that crop read as a wider building rather than as a
+    chopped one.
+  -->
+  <g id="groundwork">
+    <rect x="170" y="690" width="560" height="18" fill="#c6d5ea" />
+    <rect x="140" y="708" width="620" height="18" fill="#b6c8e2" />
+    <rect x="110" y="726" width="680" height="18" fill="#a4b8d6" />
+    <rect x="0" y="744" width="900" height="156" fill="#04122e" />
+
+    <!-- Warm light spilling from the doorway across the steps -->
+    <path d="M395 672 L505 672 L560 744 L340 744 Z" fill="url(#gold)" opacity="0.18" />
+
+    <!-- Landscaping, kept near the edges where cropping is expected -->
+    <g fill="#0a2450">
+      <ellipse cx="120" cy="726" rx="52" ry="44" />
+      <ellipse cx="780" cy="726" rx="52" ry="44" />
+    </g>
+    <g fill="#143468">
+      <circle cx="108" cy="712" r="26" />
+      <circle cx="768" cy="712" r="26" />
+    </g>
+  </g>
+</svg>

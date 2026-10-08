@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+coverage/
+
+.env
+.env.local
+.env.*.local
+
+# The whole directory is runtime state: schema is applied on boot and the
+# database is created from .env, so nothing here belongs in version control.
+# Ignored wholesale because enumerating extensions keeps missing the backup
+# files the migrator leaves behind, and those contain seeded customers and
+# password hashes.
+server/data/
+
+# user uploads
+server/uploads/avatars/*
+!server/uploads/avatars/.gitkeep
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

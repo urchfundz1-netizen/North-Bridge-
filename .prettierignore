@@ -1,0 +1,6 @@
+dist
+node_modules
+.env
+server/data
+server/uploads/avatars
+*.log
