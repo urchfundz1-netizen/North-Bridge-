@@ -1,0 +1,48 @@
+# Render blueprint: one web service that serves the API and the built SPA
+# from the same origin, with a persistent disk for SQLite and avatar uploads.
+#
+# Plan must include a disk (Starter or above) - the free plan has none, and
+# without a disk every deploy would start from an empty database.
+services:
+  - type: web
+    name: northbridge-bank
+    runtime: node
+    plan: starter
+
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Must match the service's public URL. Render derives the subdomain from
+      # the service name; if you rename the service, update this value too.
+      - key: CLIENT_ORIGIN
+        value: https://northbridge-bank.onrender.com
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: DATABASE_FILE
+        value: /var/data/northbridge.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      # SQLite is the source of truth; the Firestore mirror stays off until
+      # Firebase credentials are added here deliberately.
+      - key: FIREBASE_ENABLED
+        value: "0"
+      # Used only by the one-time `npm run seed:admin` shell command below.
+      - key: ADMIN_EMAIL
+        value: admin@northbridge.bank
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_FULL_NAME
+        value: System Administrator
+
+    disk:
+      name: northbridge-data
+      mountPath: /var/data
+      sizeGB: 1

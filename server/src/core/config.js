@@ -157,7 +157,10 @@ export const config = {
 
   firebase,
 
-  uploadsDir: resolve(SERVER_ROOT, 'uploads'),
+  // Absolute paths (e.g. a mounted volume at /var/data) are honoured as-is,
+  // so a host without a writable checkout directory can put user content
+  // somewhere that survives deploys.
+  uploadsDir: resolve(SERVER_ROOT, str('UPLOADS_DIR', './uploads')),
 
   banking: {
     requireTransferApproval: bool('REQUIRE_TRANSFER_APPROVAL', true),

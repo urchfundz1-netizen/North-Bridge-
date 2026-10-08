@@ -83,6 +83,21 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 - `TRANSFER_FEE_CENTS`, `MIN_TRANSFER_CENTS`, `MAX_TRANSFER_CENTS` — fee and guard rails.
 - `FIREBASE_ENABLED=0` (default) turns the Firestore mirror off entirely; SQLite stays the source of truth.
 
+## Deploying to Render
+
+`render.yaml` describes the whole deployment: build the SPA, serve it from Express on one origin, persist data on a mounted disk.
+
+1. Push the repo to GitHub, then in Render: **New → Blueprint** and select the repo. Render reads `render.yaml` as-is.
+2. Pick a plan **with a disk** (Starter or above) — the free plan has none, so every deploy would start from an empty database.
+3. The service boots with migrations applied automatically (`server/src/index.js` runs them on boot).
+4. One-time: set `ADMIN_PASSWORD` in the service's environment, then run `npm run seed:admin` from Render's **Shell**. (It rotates the admin password, so re-running it on purpose is how you reset access.)
+5. Everything durable lives on the disk at `/var/data`: the SQLite database (`DATABASE_FILE`) and avatar uploads (`UPLOADS_DIR`).
+
+Notes:
+
+- `CLIENT_ORIGIN` must match the service's public URL. Render derives the subdomain from the service name — if you rename the service, update that env var too.
+- The Firestore mirror ships disabled (`FIREBASE_ENABLED=0`); enable it only after adding real Firebase credentials.
+
 ## Security notes
 
 - Passwords and transfer PINs hashed with scrypt (memory-hard, per-secret salt, versioned format with automatic rehash on login).
