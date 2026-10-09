@@ -1,0 +1,53 @@
+# Production stack: the app (Express API + built SPA) behind Caddy, which
+# terminates TLS and reverse-proxies to the app over the private network.
+#
+# Create a `.env` next to this file with production values before starting:
+#   DOMAIN, CLIENT_ORIGIN, SESSION_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+# `.env` is read both for Compose variable substitution and as the app's
+# environment (via env_file). The entries under `environment:` below win, so
+# even a development-flavoured .env cannot flip the app back to dev mode.
+#
+# Bring up:   docker compose up -d --build
+# Seed admin: docker compose exec app npm run seed:admin
+# Logs:       docker compose logs -f app
+
+services:
+  app:
+    build: .
+    image: northbridge-bank
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      COOKIE_SECURE: "1"
+      DATABASE_FILE: /data/northbridge.db
+      UPLOADS_DIR: /data/uploads
+      # Refuse to start if the public origin is missing from .env.
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:?set CLIENT_ORIGIN in .env, e.g. https://bank.example.com}
+    volumes:
+      # SQLite database + uploaded avatars survive redeploys and reboots.
+      - northbridge-data:/data
+    expose:
+      - "4000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, e.g. bank.example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  northbridge-data:
+  caddy-data:
+  caddy-config:

@@ -72,6 +72,9 @@ client/
   src/api/         fetch wrapper with cookie + CSRF handling
 scripts/           smoke test, SVG checker
 firestore.rules    Firestore security rules for the optional mirror
+Dockerfile         multi-stage image (build SPA, then run the server)
+docker-compose.yml app + Caddy stack with a persistent data volume
+Caddyfile          reverse proxy + automatic TLS
 ```
 
 ## Environment
@@ -83,20 +86,70 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 - `TRANSFER_FEE_CENTS`, `MIN_TRANSFER_CENTS`, `MAX_TRANSFER_CENTS` — fee and guard rails.
 - `FIREBASE_ENABLED=0` (default) turns the Firestore mirror off entirely; SQLite stays the source of truth.
 
-## Deploying to Render
+## Deploying (Docker + Oracle Cloud Always Free)
 
-`render.yaml` describes the whole deployment: build the SPA, serve it from Express on one origin, persist data on a mounted disk.
+The app is a single Node process that serves the API and the built SPA from one origin, so it deploys as one container. `docker-compose.yml` runs it behind Caddy, which terminates TLS and reverse-proxies to the app. SQLite and avatar uploads live on a named volume, so they survive redeploys and reboots.
 
-1. Push the repo to GitHub, then in Render: **New → Blueprint** and select the repo. Render reads `render.yaml` as-is.
-2. Pick a plan **with a disk** (Starter or above) — the free plan has none, so every deploy would start from an empty database.
-3. The service boots with migrations applied automatically (`server/src/index.js` runs them on boot).
-4. One-time: set `ADMIN_PASSWORD` in the service's environment, then run `npm run seed:admin` from Render's **Shell**. (It rotates the admin password, so re-running it on purpose is how you reset access.)
-5. Everything durable lives on the disk at `/var/data`: the SQLite database (`DATABASE_FILE`) and avatar uploads (`UPLOADS_DIR`).
+**Why Oracle Cloud**: the *Always Free* tier includes a VM and persistent storage with no time limit, which is the only way to get a free persistent disk for a stateful Node app in 2026. It needs a card for identity verification, but the free resources are never charged. (Render's free instance has no disk, and Fly.io and Koyeb no longer offer free persistent volumes.)
 
-Notes:
+### 1. Create the VM
 
-- `CLIENT_ORIGIN` must match the service's public URL. Render derives the subdomain from the service name — if you rename the service, update that env var too.
+1. Sign up at [cloud.oracle.com](https://cloud.oracle.com) and open **Compute → Instances → Create instance**.
+2. Image: **Ubuntu 24.04**. Shape: **Ampere A1.Flex** (2 OCPU / 12 GB) is within the Always Free allowance; the **E2.1.Micro** (1 GB) also works but is tight for the client build — add swap if you use it.
+3. Under **Networking**, ensure the subnet allows ingress on TCP **80** and **443** (add rules to the VCN Security List if needed).
+4. Add your SSH key and create the instance.
+
+### 2. Prepare the VM
+
+```bash
+# On the instance (SSH in as the default user)
+sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2
+sudo usermod -aG docker "$USER"   # log out and back in for this to apply
+
+# Open the OS firewall (Ubuntu images ship an iptables ruleset that drops 80/443)
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+### 3. Configure and start
+
+```bash
+git clone https://github.com/urchfundz1-netizen/North-Bridge-.git
+cd North-Bridge-
+```
+
+Create a `.env` in the repo root (read by both Compose and the app):
+
+```ini
+# Use a domain you control, or <public-ip>.sslip.io for TLS without owning one.
+DOMAIN=bank.example.com
+CLIENT_ORIGIN=https://bank.example.com
+
+SESSION_SECRET=<paste 48 random bytes as hex>
+ADMIN_EMAIL=admin@northbridge.bank
+ADMIN_PASSWORD=<a strong password>
+```
+
+Generate the secret with:
+`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+
+Point `DOMAIN` at the instance's public IP (an `A` record), then:
+
+```bash
+docker compose up -d --build
+docker compose exec app npm run seed:admin   # one-time: create the administrator
+```
+
+Migrations run automatically on boot (`server/src/index.js`). Visit `https://<DOMAIN>/admin` to sign in.
+
+### Notes
+
+- `CLIENT_ORIGIN` must equal `https://<DOMAIN>`; the server refuses to boot in production while it is a loopback address (silent CORS failures otherwise).
+- Everything durable lives on the `northbridge-data` Docker volume mounted at `/data`: the SQLite database (`DATABASE_FILE`) and avatar uploads (`UPLOADS_DIR`). `docker compose down` keeps it; `docker compose down -v` deletes it.
+- Caddy stores its certificates in the `caddy-data` volume, so renewals survive restarts.
 - The Firestore mirror ships disabled (`FIREBASE_ENABLED=0`); enable it only after adding real Firebase credentials.
+- `render.yaml` is kept as an alternative for Render, but its config requires a paid instance (free has no disk).
 
 ## Security notes
 

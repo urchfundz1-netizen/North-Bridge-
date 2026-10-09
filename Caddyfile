@@ -1,0 +1,6 @@
+# Caddy obtains and renews a Let's Encrypt certificate for DOMAIN automatically
+# (the DOMAIN env var is supplied by docker-compose.yml).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:4000
+}
