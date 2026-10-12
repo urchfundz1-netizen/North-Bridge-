@@ -1,12 +1,13 @@
 /**
- * Reference data written by the migration: default settings and the initial
+ * Reference data written at bootstrap: default settings and the initial
  * catalogue of supported banks.
  *
  * Existing rows are never overwritten, so administrator edits (renamed banks,
- * deactivated institutions) survive re-running the migration.
+ * deactivated institutions) survive re-running bootstrap.
  */
 
 import { config } from '../core/config.js';
+import { db, C, nowIso, nextId, transaction } from './firestore.js';
 
 export const DEFAULT_SETTINGS = {
   require_transfer_approval: config.banking.requireTransferApproval ? '1' : '0',
@@ -18,18 +19,7 @@ export const DEFAULT_SETTINGS = {
   support_phone: '+1 (800) 555-0142',
 };
 
-/** Insert any missing setting keys. Existing values always win. */
-export function seedSettings(db) {
-  const insert = db.prepare(
-    `INSERT INTO settings (key, value) VALUES (?, ?)
-     ON CONFLICT (key) DO NOTHING`,
-  );
-  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-    insert.run(key, value);
-  }
-}
-
-const STARTER_BANKS = [
+export const STARTER_BANKS = [
   { name: 'Northbridge Bank', code: 'NBBK', country: 'United States', routing: 9, local: 1, intl: 1, wire: 1 },
   { name: 'Meridian Trust Bank', code: 'MRDT', country: 'United States', routing: 9, local: 1, intl: 1, wire: 1 },
   { name: 'Atlas Federal Savings', code: 'ATLS', country: 'United States', routing: 9, local: 1, intl: 1, wire: 1 },
@@ -44,27 +34,50 @@ const STARTER_BANKS = [
   { name: 'Sahara Trade Finance Bank', code: 'SHTF', country: 'United Arab Emirates', routing: 3, local: 0, intl: 1, wire: 1 },
 ];
 
-/** Insert any missing starter banks (matched case-insensitively by name). */
-export function seedBanks(db) {
-  const exists = db.prepare('SELECT id FROM banks WHERE name = ? COLLATE NOCASE');
-  const insert = db.prepare(
-    `INSERT INTO banks
-       (name, code, country, routing_number_length, supports_local, supports_international, supports_wire)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
+/** Insert any missing setting keys. Existing values always win. */
+export async function seedSettings() {
+  const existing = await db().collection(C.settings).get();
+  const present = new Set(existing.docs.map((d) => d.id));
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    if (present.has(key)) continue;
+    await db().collection(C.settings).doc(key).set({ key, value, updated_at: nowIso() });
+  }
+}
+
+/**
+ * Insert any missing starter banks. Uniqueness is enforced by the same
+ * `bankName:<lowercase>` index document the bank service uses, so seeding and
+ * admin-created banks cannot collide.
+ */
+export async function seedBanks() {
   let added = 0;
   for (const bank of STARTER_BANKS) {
-    if (exists.get(bank.name)) continue;
-    insert.run(
-      bank.name,
-      bank.code,
-      bank.country,
-      bank.routing || null,
-      bank.local,
-      bank.intl,
-      bank.wire,
-    );
-    added += 1;
+    const created = await transaction(async (txn) => {
+      const key = `bankName:${bank.name.toLowerCase()}`;
+      const idx = await txn.get(db().collection(C.refs).doc(key));
+      if (idx.exists) return false;
+
+      const id = await nextId(txn, C.banks);
+      const now = nowIso();
+      txn.set(db().collection(C.banks).doc(String(id)), {
+        id,
+        name: bank.name,
+        name_normalized: bank.name.toLowerCase(),
+        code: bank.code,
+        country: bank.country,
+        routing_number_length: bank.routing || null,
+        supports_local: bank.local,
+        supports_international: bank.intl,
+        supports_wire: bank.wire,
+        is_active: 1,
+        created_by_admin_id: null,
+        created_at: now,
+        updated_at: now,
+      });
+      txn.set(db().collection(C.refs).doc(key), { key, ownerId: String(id) });
+      return true;
+    });
+    if (created) added += 1;
   }
   return added;
 }

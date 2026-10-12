@@ -1,18 +1,22 @@
 /**
- * Session management.
+ * Session management (Firestore).
  *
  * Design notes
- *   * Sessions live in the database. The browser only ever holds an opaque
- *     random token in an `httpOnly` cookie, so JavaScript (including any XSS)
- *     cannot read it, and the database stores only the token's SHA-256 digest.
+ *   * Sessions live in Firestore, keyed by the SHA-256 digest of the opaque
+ *     cookie token. The browser only ever holds the random token in an
+ *     `httpOnly` cookie, so a leaked database cannot be replayed as a login.
  *   * Customer and admin sessions use separate cookies AND are constrained to
  *     their own `actor_type`. An admin cookie therefore cannot satisfy a
- *     customer route, and vice versa - this is enforced in SQL, not just in
- *     middleware.
- *   * Each session row carries its own CSRF token for double-submit protection.
+ *     customer route, and vice versa.
+ *   * Each session carries its own CSRF token for double-submit protection.
+ *
+ * Serverless note: the in-memory rate-limit buckets below are per-instance.
+ * Behind more than one instance they under-count; a shared store (Redis or a
+ * Firestore counter doc) is the upgrade path. Kept in-memory for now so the
+ * call sites do not change.
  */
 
-import { getDb, one, run, nowIso } from '../db/connection.js';
+import { db, C, nowIso } from '../db/firestore.js';
 import { generateToken, hashToken } from './crypto.js';
 import { config, COOKIE_NAMES } from './config.js';
 
@@ -22,26 +26,26 @@ const MS_PER_HOUR = 3_600_000;
  * Create a session and return `{ token, csrfToken, expiresAt }`.
  * @param {'customer'|'admin'} actorType
  */
-export function createSession(actorType, actorId, request = null) {
+export async function createSession(actorType, actorId, request = null) {
   const token = generateToken(32);
   const csrfToken = generateToken(24);
   const ttlHours = actorType === 'admin' ? config.adminSessionTtlHours : config.sessionTtlHours;
   const expiresAt = new Date(Date.now() + ttlHours * MS_PER_HOUR).toISOString();
+  const tokenHash = hashToken(token);
+  const now = nowIso();
 
-  run(
-    `INSERT INTO sessions
-       (token_hash, actor_type, actor_id, csrf_token, ip_address, user_agent, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      hashToken(token),
-      actorType,
-      actorId,
-      csrfToken,
-      request ? (request.ip ?? null) : null,
-      request ? (request.get('user-agent') ?? null).slice(0, 300) : null,
-      expiresAt,
-    ],
-  );
+  await db().collection(C.sessions).doc(tokenHash).set({
+    token_hash: tokenHash,
+    actor_type: actorType,
+    actor_id: actorId,
+    csrf_token: csrfToken,
+    ip_address: request ? (request.ip ?? null) : null,
+    user_agent: request ? (request.get('user-agent') ?? null).slice(0, 300) : null,
+    created_at: now,
+    last_seen_at: now,
+    expires_at: expiresAt,
+    revoked_at: null,
+  });
 
   return { token, csrfToken, expiresAt };
 }
@@ -50,52 +54,55 @@ export function createSession(actorType, actorId, request = null) {
  * Resolve a session token to its row, enforcing actor type and expiry.
  * Returns null for unknown, expired, revoked, or wrong-actor tokens.
  */
-export function resolveSession(token, expectedActorType) {
+export async function resolveSession(token, expectedActorType) {
   if (!token || typeof token !== 'string') return null;
 
-  const row = one(
-    `SELECT * FROM sessions
-      WHERE token_hash = ?
-        AND actor_type = ?
-        AND revoked_at IS NULL
-        AND expires_at > ?`,
-    [hashToken(token), expectedActorType, nowIso()],
-  );
-  if (!row) return null;
+  const tokenHash = hashToken(token);
+  const ref = db().collection(C.sessions).doc(tokenHash);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
 
-  // Best-effort activity tracking; ignore write failures so a read never 500s.
-  try {
-    run('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [nowIso(), row.id]);
-  } catch {
-    /* non-critical */
-  }
+  const row = { id: tokenHash, ...snap.data() };
+  if (row.actor_type !== expectedActorType) return null;
+  if (row.revoked_at) return null;
+  if (!(row.expires_at > nowIso())) return null;
+
+  // Best-effort activity tracking; never fail a request over it.
+  ref.set({ last_seen_at: nowIso() }, { merge: true }).catch(() => {});
   return row;
 }
 
-export function revokeSession(token, actorType) {
+export async function revokeSession(token, actorType) {
   if (!token) return;
-  run(
-    'UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND actor_type = ? AND revoked_at IS NULL',
-    [nowIso(), hashToken(token), actorType],
-  );
+  const row = await resolveSession(token, actorType);
+  if (!row) return;
+  await db().collection(C.sessions).doc(row.id).set({ revoked_at: nowIso() }, { merge: true });
 }
 
 /** Revoke every session for an actor. Used on logout-everywhere and on
  *  administrative account disable / customer status changes. */
-export function revokeSessionsFor(actorType, actorId) {
-  run(
-    'UPDATE sessions SET revoked_at = ? WHERE actor_type = ? AND actor_id = ? AND revoked_at IS NULL',
-    [nowIso(), actorType, actorId],
-  );
+export async function revokeSessionsFor(actorType, actorId) {
+  const snap = await db()
+    .collection(C.sessions)
+    .where('actor_type', '==', actorType)
+    .where('actor_id', '==', actorId)
+    .where('revoked_at', '==', null)
+    .get();
+
+  if (snap.empty) return;
+  const batch = db().batch();
+  snap.forEach((doc) => batch.set(doc.ref, { revoked_at: nowIso() }, { merge: true }));
+  await batch.commit();
 }
 
 /** Housekeeping: delete sessions that expired or were revoked over a day ago. */
-export function purgeExpiredSessions() {
+export async function purgeExpiredSessions() {
   const cutoff = new Date(Date.now() - 24 * MS_PER_HOUR).toISOString();
-  run('DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)', [
-    cutoff,
-    cutoff,
-  ]);
+  const snap = await db().collection(C.sessions).where('expires_at', '<', cutoff).get();
+  if (snap.empty) return;
+  const batch = db().batch();
+  snap.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -126,15 +133,9 @@ export function clearSessionCookie(res, actorType) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Attempt throttling                                                        */
+/* Attempt throttling                                                         */
 /* -------------------------------------------------------------------------- */
 
-/**
- * In-memory sliding-window limiter keyed by IP and by account identifier.
- *
- * This is intentionally per-process. Behind more than one instance, swap in a
- * shared store (Redis) - the call sites would not need to change.
- */
 const buckets = new Map();
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -191,5 +192,3 @@ export function pruneRateLimits() {
     }
   }
 }
-
-export { getDb };

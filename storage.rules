@@ -1,0 +1,14 @@
+// Avatars live in Firebase Storage. The server writes them through the Admin
+// SDK (which bypasses these rules); clients may read an avatar by its public
+// URL but can never write or list. Everything else stays locked down.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /avatars/{fileId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

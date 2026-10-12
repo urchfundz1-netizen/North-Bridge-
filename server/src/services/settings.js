@@ -1,13 +1,18 @@
 /**
  * Runtime settings.
  *
- * Values are seeded from the environment by the migration, but thereafter live
- * in the database so banking rules can be changed without a redeploy. Cached in
- * memory and refreshed on write.
+ * Values are seeded from the environment at bootstrap, but thereafter live in
+ * Firestore so banking rules can change without a redeploy. They are loaded
+ * into a per-instance cache at boot; reads stay synchronous so `bankingRules()`
+ * keeps its existing (synchronous) call sites.
+ *
+ * Serverless trade-off: `setSetting` refreshes only the instance that handled
+ * the write. Other warm instances keep the old values until they recycle. For
+ * banking rules that change rarely this is acceptable; a shared cache (Redis)
+ * would remove the window if it ever matters.
  */
 
-import { one, run, many, nowIso } from '../db/connection.js';
-import { mirror } from './firestore.js';
+import { db, C, nowIso } from '../db/firestore.js';
 
 const cache = new Map();
 
@@ -18,34 +23,38 @@ const NUMERIC = new Set([
   'max_transfer_cents',
 ]);
 
+/** Load every setting into the cache. Call once at boot (and after writes). */
+export async function loadSettings() {
+  const snap = await db().collection(C.settings).get();
+  cache.clear();
+  snap.forEach((doc) => {
+    const key = doc.id;
+    const raw = doc.data().value;
+    cache.set(key, NUMERIC.has(key) ? Number(raw) : raw);
+  });
+  return cache;
+}
+
 /** Get a single setting, falling back when the key is absent. */
 export function getSetting(key, fallback = null) {
   if (cache.has(key)) return cache.get(key);
-  const row = one('SELECT value FROM settings WHERE key = ?', [key]);
-  if (!row) return fallback;
-  const value = NUMERIC.has(key) ? Number(row.value) : row.value;
-  cache.set(key, value);
-  return value;
+  return fallback;
 }
 
-/** Upsert a setting and refresh the cache. */
-export function setSetting(key, value) {
+/** Upsert a setting and refresh the local cache. */
+export async function setSetting(key, value) {
   const updatedAt = nowIso();
-  run(
-    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    [key, String(value), updatedAt],
-  );
+  await db()
+    .collection(C.settings)
+    .doc(key)
+    .set({ key, value: String(value), updated_at: updatedAt }, { merge: true });
   cache.set(key, NUMERIC.has(key) ? Number(value) : String(value));
-  mirror('settings', key, { key, value: String(value), updated_at: updatedAt });
 }
 
 /** Snapshot of every setting, for the admin settings screen. */
 export function settingsSnapshot() {
   const result = {};
-  for (const row of many('SELECT key, value FROM settings ORDER BY key')) {
-    result[row.key] = NUMERIC.has(row.key) ? Number(row.value) : row.value;
-  }
+  for (const [key, value] of cache) result[key] = value;
   return result;
 }
 
