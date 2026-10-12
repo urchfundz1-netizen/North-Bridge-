@@ -9,7 +9,22 @@
  *                     mandatory reason where the action is destructive.
  */
 
-import { one, many, run, transaction, nowIso } from '../db/connection.js';
+import {
+  C,
+  nowIso,
+  getById,
+  setById,
+  coll,
+  snapRows,
+  transaction,
+  txnGetById,
+  readCounter,
+  bumpCounter,
+  checkUnique,
+  claimUnique,
+  releaseUnique,
+  txnSet,
+} from '../db/firestore.js';
 import { randomInt } from 'node:crypto';
 import { hashSecret, verifySecret, needsRehash } from '../core/crypto.js';
 import { generateUniqueAccountNumber } from '../core/identifiers.js';
@@ -17,9 +32,7 @@ import { validationFailed, conflict, notFound, badRequest } from '../core/errors
 import { revokeSessionsFor } from '../core/session.js';
 import { postEntry, ENTRY_TYPES, listEntries, summarise } from './ledger-service.js';
 import { recordAudit, AUDIT_ACTIONS } from './audit.js';
-import { mirrorCustomerById, mirrorLedgerEntryById } from './firestore.js';
 
-/** Statuses an administrator may assign. */
 export const ACCOUNT_STATUSES = ['active', 'locked', 'frozen', 'disabled'];
 
 const ACCOUNT_TYPES = ['checking', 'savings', 'premium'];
@@ -29,16 +42,18 @@ const LOGIN_MAX_FAILURES = 6;
 /* Registration                                                                */
 /* -------------------------------------------------------------------------- */
 
+const emailKey = (email) => `customerEmail:${String(email).trim().toLowerCase()}`;
+
 /**
  * Create a customer account and allocate its account number.
  *
- * Password and transfer PIN are hashed independently with different salts. The
- * account number is generated inside the same transaction as the insert, and
- * the UNIQUE constraint plus retry loop in `generateUniqueAccountNumber`
- * guarantees it cannot collide.
+ * Password and transfer PIN are hashed independently. The account number is
+ * chosen and both unique indexes are claimed inside the same transaction as the
+ * insert, so neither can collide.
  */
 export async function registerCustomer(input, request) {
-  const accountNumber = generateUniqueAccountNumber();
+  const email = input.email.toLowerCase();
+  const now = nowIso();
   const [passwordHash, transferPinHash] = await Promise.all([
     hashSecret(input.password),
     hashSecret(input.transferPin),
@@ -46,75 +61,81 @@ export async function registerCustomer(input, request) {
 
   let customerId;
   try {
-    customerId = transaction((db) => {
-      const inserted = db
-        .prepare(
-          `INSERT INTO customers
-             (account_number, full_name, date_of_birth, email, phone,
-              address_line1, address_line2, city, state_region, postal_code,
-              country, account_type, password_hash, transfer_pin_hash,
-              transfer_pin_hash_updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          accountNumber,
-          input.fullName,
-          input.dateOfBirth,
-          input.email.toLowerCase(),
-          input.phone,
-          input.addressLine1,
-          input.addressLine2 ?? null,
-          input.city,
-          input.stateRegion,
-          input.postalCode,
-          input.country,
-          input.accountType,
-          passwordHash,
-          transferPinHash,
-          nowIso(),
-        );
-      return Number(inserted.lastInsertRowid);
+    customerId = await transaction(async (txn) => {
+      const id = await readCounter(txn, C.customers);
+      const accountNumber = await generateUniqueAccountNumber(txn);
+      await checkUnique(txn, emailKey(email), id);
+
+      bumpCounter(txn, C.customers, id);
+      claimUnique(txn, emailKey(email), id);
+      claimUnique(txn, `customerAccount:${accountNumber}`, id);
+      txnSet(txn, C.customers, id, {
+        account_number: accountNumber,
+        full_name: input.fullName,
+        date_of_birth: input.dateOfBirth,
+        email,
+        phone: input.phone,
+        address_line1: input.addressLine1,
+        address_line2: input.addressLine2 ?? null,
+        city: input.city,
+        state_region: input.stateRegion,
+        postal_code: input.postalCode,
+        country: input.country ?? 'United States',
+        account_type: input.accountType,
+        password_hash: passwordHash,
+        transfer_pin_hash: transferPinHash,
+        transfer_pin_hash_updated_at: now,
+        transfer_pin_failed_attempts: 0,
+        transfer_pin_locked_until: null,
+        failed_login_attempts: 0,
+        locked_until: null,
+        status: 'active',
+        status_reason: null,
+        status_changed_at: null,
+        status_changed_by_admin_id: null,
+        balance_cents: 0,
+        profile_picture: null,
+        last_login_at: null,
+        created_at: now,
+        updated_at: now,
+      });
+      return id;
     });
   } catch (error) {
-    if (String(error.message).includes('UNIQUE constraint failed: customers.email')) {
+    if (error.code === 'unique_violation' && String(error.key).startsWith('customerEmail:')) {
       throw conflict('An account already exists for that email address.');
     }
     throw error;
   }
 
-  recordAudit({
+  await recordAudit({
     actorType: 'customer',
     actorId: customerId,
-    actorEmail: input.email.toLowerCase(),
+    actorEmail: email,
     action: AUDIT_ACTIONS.CUSTOMER_REGISTERED,
     targetType: 'customer',
     targetId: customerId,
-    targetLabel: accountNumber,
+    targetLabel: (await getById(C.customers, customerId))?.account_number ?? null,
     metadata: { accountType: input.accountType, fullName: input.fullName },
     request,
   });
 
-  mirrorCustomerById(customerId);
-  return one('SELECT * FROM customers WHERE id = ?', [customerId]);
+  return getById(C.customers, customerId);
 }
 
 /* -------------------------------------------------------------------------- */
 /* Authentication                                                             */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Verify login credentials.
- *
- * Returns a discriminated result rather than throwing, so the caller decides
- * how much to reveal. The timing-safe path always runs a hash comparison, even
- * for an unknown email, to avoid leaking which addresses are registered via
- * response time.
- */
 const DUMMY_HASH =
   'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
 
+/**
+ * Verify login credentials. Returns a discriminated result rather than throwing,
+ * so the caller decides how much to reveal.
+ */
 export async function authenticateCustomer(email, password) {
-  const customer = one('SELECT * FROM customers WHERE email = ?', [String(email ?? '').toLowerCase()]);
+  const customer = await findCustomerByEmail(email);
 
   if (!customer) {
     await verifySecret(String(password ?? ''), DUMMY_HASH);
@@ -137,20 +158,19 @@ export async function authenticateCustomer(email, password) {
     return { ok: false, reason: 'disabled' };
   }
   if (customer.status === 'frozen') {
-    // Frozen accounts may still sign in to view funds, but cannot move money.
     return { ok: true, customer, restricted: 'frozen' };
   }
 
-  run(
-    'UPDATE customers SET last_login_at = ?, failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
-    [nowIso(), customer.id],
+  await setById(
+    C.customers,
+    customer.id,
+    { last_login_at: nowIso(), failed_login_attempts: 0, locked_until: null },
+    { merge: true },
   );
-  mirrorCustomerById(customer.id);
 
-  // Opportunistically upgrade hashes created under weaker parameters.
   if (needsRehash(customer.password_hash)) {
     const upgraded = await hashSecret(password);
-    run('UPDATE customers SET password_hash = ? WHERE id = ?', [upgraded, customer.id]);
+    await setById(C.customers, customer.id, { password_hash: upgraded }, { merge: true });
   }
 
   return { ok: true, customer: { ...customer, failed_login_attempts: 0 } };
@@ -158,46 +178,41 @@ export async function authenticateCustomer(email, password) {
 
 const LOGIN_LOCKOUT_MINUTES = 15;
 
-/**
- * Increment the failed sign-in counter and, on reaching the limit, lock the
- * account with an explicit reason so the audit trail explains itself.
- */
-function bumpLoginFailure(customer) {
+async function bumpLoginFailure(customer) {
   const attempts = (customer.failed_login_attempts ?? 0) + 1;
   const shouldLock = attempts >= LOGIN_MAX_FAILURES;
 
   if (shouldLock) {
     const reason = 'Automatically locked after repeated failed sign-in attempts.';
-    run(
-      `UPDATE customers
-          SET failed_login_attempts = ?, locked_until = ?, status = 'locked',
-              status_reason = ?, status_changed_at = ?, updated_at = ?
-        WHERE id = ?`,
-      [
-        attempts,
-        new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60_000).toISOString(),
-        reason,
-        nowIso(),
-        nowIso(),
-        customer.id,
-      ],
+    const now = nowIso();
+    await setById(
+      C.customers,
+      customer.id,
+      {
+        failed_login_attempts: attempts,
+        locked_until: new Date(Date.now() + LOGIN_LOCKOUT_MINUTES * 60_000).toISOString(),
+        status: 'locked',
+        status_reason: reason,
+        status_changed_at: now,
+        updated_at: now,
+      },
+      { merge: true },
     );
-    mirrorCustomerById(customer.id);
     return;
   }
 
-  run('UPDATE customers SET failed_login_attempts = ?, updated_at = ? WHERE id = ?', [
-    attempts,
-    nowIso(),
+  await setById(
+    C.customers,
     customer.id,
-  ]);
+    { failed_login_attempts: attempts, updated_at: nowIso() },
+    { merge: true },
+  );
 }
 
 /* -------------------------------------------------------------------------- */
 /* Self-service profile                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** Fields a customer is allowed to change on their own profile. */
 const SELF_EDITABLE_FIELDS = [
   ['full_name', 'fullName'],
   ['phone', 'phone'],
@@ -209,30 +224,26 @@ const SELF_EDITABLE_FIELDS = [
   ['country', 'country'],
 ];
 
-export function updateOwnProfile(customerId, input, request) {
-  const before = one('SELECT * FROM customers WHERE id = ?', [customerId]);
+export async function updateOwnProfile(customerId, input, request) {
+  const before = await getById(C.customers, customerId);
   if (!before) throw notFound('Account not found.');
 
-  const assignments = [];
-  const params = [];
+  const patch = {};
   for (const [column, key] of SELF_EDITABLE_FIELDS) {
     if (input[key] === undefined) continue;
-    assignments.push(`${column} = ?`);
-    params.push(input[key] ?? null);
+    patch[column] = input[key] ?? null;
   }
 
-  if (assignments.length === 0) return before;
+  if (Object.keys(patch).length === 0) return before;
+  patch.updated_at = nowIso();
 
-  assignments.push('updated_at = ?');
-  params.push(nowIso(), customerId);
-
-  run(`UPDATE customers SET ${assignments.join(', ')} WHERE id = ?`, params);
+  await setById(C.customers, customerId, patch, { merge: true });
 
   const changed = SELF_EDITABLE_FIELDS.filter(
     ([column, key]) => input[key] !== undefined && (before[column] ?? null) !== (input[key] ?? null),
   ).map(([column]) => column);
 
-  recordAudit({
+  await recordAudit({
     actorType: 'customer',
     actorId: customerId,
     actorEmail: before.email,
@@ -244,27 +255,21 @@ export function updateOwnProfile(customerId, input, request) {
     request,
   });
 
-  const updated = one('SELECT * FROM customers WHERE id = ?', [customerId]);
-  mirrorCustomerById(customerId);
-  return updated;
+  return getById(C.customers, customerId);
 }
 
 /** Change the login password. Requires the current password. */
 export async function changePassword(customerId, currentPassword, newPassword, request) {
-  const customer = one('SELECT * FROM customers WHERE id = ?', [customerId]);
+  const customer = await getById(C.customers, customerId);
   if (!customer) throw notFound('Account not found.');
 
   const valid = await verifySecret(String(currentPassword ?? ''), customer.password_hash);
   if (!valid) throw validationFailed({ currentPassword: 'Your current password is incorrect.' });
 
   const newHash = await hashSecret(newPassword);
-  run('UPDATE customers SET password_hash = ?, updated_at = ? WHERE id = ?', [
-    newHash,
-    nowIso(),
-    customerId,
-  ]);
+  await setById(C.customers, customerId, { password_hash: newHash, updated_at: nowIso() }, { merge: true });
 
-  recordAudit({
+  await recordAudit({
     actorType: 'customer',
     actorId: customerId,
     actorEmail: customer.email,
@@ -278,10 +283,9 @@ export async function changePassword(customerId, currentPassword, newPassword, r
   return true;
 }
 
-/** Change the transfer PIN. Requires the current password *and* the old PIN,
- *  so a hijacked session alone cannot take over money movement. */
+/** Change the transfer PIN. Requires the current password *and* the old PIN. */
 export async function changeTransferPin(customerId, currentPassword, currentPin, newPin, request) {
-  const customer = one('SELECT * FROM customers WHERE id = ?', [customerId]);
+  const customer = await getById(C.customers, customerId);
   if (!customer) throw notFound('Account not found.');
 
   const passwordOk = await verifySecret(String(currentPassword ?? ''), customer.password_hash);
@@ -291,14 +295,15 @@ export async function changeTransferPin(customerId, currentPassword, currentPin,
   if (!pinOk) throw validationFailed({ currentTransferPin: 'Your current transfer PIN is incorrect.' });
 
   const newHash = await hashSecret(newPin);
-  run(
-    `UPDATE customers
-        SET transfer_pin_hash = ?, transfer_pin_hash_updated_at = ?, updated_at = ?
-      WHERE id = ?`,
-    [newHash, nowIso(), nowIso(), customerId],
+  const now = nowIso();
+  await setById(
+    C.customers,
+    customerId,
+    { transfer_pin_hash: newHash, transfer_pin_hash_updated_at: now, updated_at: now },
+    { merge: true },
   );
 
-  recordAudit({
+  await recordAudit({
     actorType: 'customer',
     actorId: customerId,
     actorEmail: customer.email,
@@ -317,76 +322,104 @@ export async function changeTransferPin(customerId, currentPassword, currentPin,
 /* -------------------------------------------------------------------------- */
 
 export function findCustomerById(id) {
-  return one('SELECT * FROM customers WHERE id = ?', [id]);
+  return getById(C.customers, id);
 }
 
-export function findCustomerByAccountNumber(accountNumber) {
-  return one('SELECT * FROM customers WHERE account_number = ?', [String(accountNumber ?? '').trim()]);
+export async function findCustomerByAccountNumber(accountNumber) {
+  const snap = await coll(C.customers)
+    .where('account_number', '==', String(accountNumber ?? '').trim())
+    .limit(1)
+    .get();
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-/** Email lookup. Case-insensitive because addresses are stored lowercased. */
-export function findCustomerByEmail(email) {
-  return one('SELECT * FROM customers WHERE email = ?', [String(email ?? '').trim().toLowerCase()]);
+export async function findCustomerByEmail(email) {
+  const snap = await coll(C.customers)
+    .where('email', '==', String(email ?? '').trim().toLowerCase())
+    .limit(1)
+    .get();
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
 /** Paginated + searchable customer directory for the admin panel. */
-export function listCustomers({ search, status, accountType, limit = 25, offset = 0 } = {}) {
-  const clauses = [];
-  const params = [];
+export async function listCustomers({ search, status, accountType, limit = 25, offset = 0 } = {}) {
+  if (status && status !== 'all' && !ACCOUNT_STATUSES.includes(status)) {
+    throw badRequest('Unknown account status filter.');
+  }
+  if (accountType && accountType !== 'all' && !ACCOUNT_TYPES.includes(accountType)) {
+    throw badRequest('Unknown account type filter.');
+  }
+
+  const snap = await coll(C.customers).get();
+  let rows = snapRows(snap);
+
+  if (status && status !== 'all') rows = rows.filter((row) => row.status === status);
+  if (accountType && accountType !== 'all') rows = rows.filter((row) => row.account_type === accountType);
 
   if (search) {
-    clauses.push(
-      '(full_name LIKE ? OR email LIKE ? OR account_number LIKE ? OR phone LIKE ?)',
+    const needle = String(search).toLowerCase();
+    rows = rows.filter((row) =>
+      [row.full_name, row.email, row.account_number, row.phone]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle)),
     );
-    const like = `%${search}%`;
-    params.push(like, like, like, like);
-  }
-  if (status && status !== 'all') {
-    if (!ACCOUNT_STATUSES.includes(status)) throw badRequest('Unknown account status filter.');
-    clauses.push('status = ?');
-    params.push(status);
-  }
-  if (accountType && accountType !== 'all') {
-    if (!ACCOUNT_TYPES.includes(accountType)) throw badRequest('Unknown account type filter.');
-    clauses.push('account_type = ?');
-    params.push(accountType);
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const rows = many(
-    `SELECT * FROM customers ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
-    [...params, limit, offset],
-  );
-  const { total } = one(`SELECT COUNT(*) AS total FROM customers ${where}`, params);
-  return { rows, total };
+  rows.sort((a, b) => {
+    if (a.created_at === b.created_at) return b.id - a.id;
+    return a.created_at < b.created_at ? 1 : -1;
+  });
+
+  const total = rows.length;
+  return { rows: rows.slice(offset, offset + limit), total };
 }
 
 /** Full profile view for an admin, including activity summaries. */
-export function customerDetail(id) {
-  const customer = findCustomerById(id);
+export async function customerDetail(id) {
+  const customer = await findCustomerById(id);
   if (!customer) return null;
 
-  const transfers = many(
-    `SELECT id, reference_number, transfer_type, recipient_name, recipient_bank_name,
-            amount_cents, fee_cents, status, requested_at
-       FROM transfers WHERE customer_id = ? ORDER BY requested_at DESC, id DESC LIMIT 25`,
-    [id],
-  );
+  const transferSnap = await coll(C.transfers).where('customer_id', '==', id).get();
+  const transfers = snapRows(transferSnap)
+    .sort((a, b) => (a.requested_at === b.requested_at ? b.id - a.id : a.requested_at < b.requested_at ? 1 : -1))
+    .slice(0, 25)
+    .map((t) => ({
+      id: t.id,
+      reference_number: t.reference_number,
+      transfer_type: t.transfer_type,
+      recipient_name: t.recipient_name,
+      recipient_bank_name: t.recipient_bank_name,
+      amount_cents: t.amount_cents,
+      fee_cents: t.fee_cents,
+      status: t.status,
+      requested_at: t.requested_at,
+    }));
 
-  const funding = many(
-    `SELECT l.id, l.amount_cents, l.balance_after_cents, l.description,
-            l.reference_number, l.created_at, a.full_name AS admin_name, a.email AS admin_email
-       FROM ledger_entries l
-       LEFT JOIN admins a ON a.id = l.admin_id
-      WHERE l.customer_id = ? AND l.entry_type = 'deposit'
-      ORDER BY l.created_at DESC, l.id DESC LIMIT 50`,
-    [id],
-  );
+  const ledgerSnap = await coll(C.ledger).where('customer_id', '==', id).get();
+  let funding = snapRows(ledgerSnap).filter((l) => l.entry_type === 'deposit');
+  funding.sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : a.created_at < b.created_at ? 1 : -1));
+  funding = funding.slice(0, 50);
 
-  return { customer, transfers, funding, summary: summarise(id) };
+  const adminIds = [...new Set(funding.map((f) => f.admin_id).filter(Boolean))];
+  const admins = new Map();
+  for (const adminId of adminIds) {
+    const admin = await getById(C.admins, adminId);
+    if (admin) admins.set(adminId, admin);
+  }
+  funding = funding.map((l) => ({
+    id: l.id,
+    amount_cents: l.amount_cents,
+    balance_after_cents: l.balance_after_cents,
+    description: l.description,
+    reference_number: l.reference_number,
+    created_at: l.created_at,
+    admin_name: admins.get(l.admin_id)?.full_name ?? null,
+    admin_email: admins.get(l.admin_id)?.email ?? null,
+  }));
+
+  return { customer, transfers, funding, summary: await summarise(id) };
 }
 
-/** Every field an admin may edit on a customer. */
 const ADMIN_EDITABLE = [
   ['full_name', 'fullName'],
   ['date_of_birth', 'dateOfBirth'],
@@ -401,66 +434,66 @@ const ADMIN_EDITABLE = [
   ['account_type', 'accountType'],
 ];
 
-export function adminUpdateCustomer(id, input, admin, request) {
-  const before = findCustomerById(id);
+export async function adminUpdateCustomer(id, input, admin, request) {
+  const before = await findCustomerById(id);
   if (!before) throw notFound('Customer not found.');
 
-  const updated = transaction((db) => {
-    const assignments = [];
-    const params = [];
+  const patch = {};
+  for (const [column, key] of ADMIN_EDITABLE) {
+    if (input[key] === undefined) continue;
+    patch[column] = key === 'email' ? String(input[key]).toLowerCase() : input[key] ?? null;
+  }
 
-    for (const [column, key] of ADMIN_EDITABLE) {
-      if (input[key] === undefined) continue;
-      assignments.push(`${column} = ?`);
-      params.push(input[key] ?? null);
+  if (Object.keys(patch).length === 0) return before;
+
+  const emailChanged = patch.email !== undefined && patch.email !== before.email;
+  patch.updated_at = nowIso();
+
+  const changed = ADMIN_EDITABLE.filter(([column, key]) => {
+    if (input[key] === undefined) return false;
+    const next = key === 'email' ? String(input[key]).toLowerCase() : input[key] ?? null;
+    return (before[column] ?? null) !== next;
+  }).map(([, key]) => key);
+
+  await transaction(async (txn) => {
+    const current = await txnGetById(txn, C.customers, id);
+    if (!current) throw notFound('Customer not found.');
+
+    if (emailChanged) {
+      await checkUnique(txn, emailKey(patch.email), id);
+      if (before.email) releaseUnique(txn, emailKey(before.email));
+      claimUnique(txn, emailKey(patch.email), id);
     }
-    if (assignments.length === 0) return before;
 
-    assignments.push('updated_at = ?');
-    params.push(nowIso(), id);
-
-    try {
-      db.prepare(`UPDATE customers SET ${assignments.join(', ')} WHERE id = ?`).run(...params);
-    } catch (error) {
-      if (String(error.message).includes('UNIQUE constraint failed: customers.email')) {
-        throw conflict('Another account already uses that email address.');
-      }
-      throw error;
+    txnSet(txn, C.customers, id, patch, { merge: true });
+  }).catch((error) => {
+    if (error.code === 'unique_violation') {
+      throw conflict('Another account already uses that email address.');
     }
-
-    const changed = ADMIN_EDITABLE.filter(
-      ([column, key]) => input[key] !== undefined && (before[column] ?? null) !== (input[key] ?? null),
-    ).map(([, key]) => key);
-
-    recordAudit({
-      actorType: 'admin',
-      actorId: admin.id,
-      actorEmail: admin.email,
-      action: AUDIT_ACTIONS.ACCOUNT_UPDATED,
-      targetType: 'customer',
-      targetId: id,
-      targetLabel: before.account_number,
-      reason: input.reason ?? null,
-      metadata: { changedFields: changed },
-      request,
-    });
-
-    return findCustomerById(id);
+    throw error;
   });
 
-  // `updated === before` means no field was assigned, so nothing was written.
-  if (updated !== before) mirrorCustomerById(id);
-  return updated;
+  await recordAudit({
+    actorType: 'admin',
+    actorId: admin.id,
+    actorEmail: admin.email,
+    action: AUDIT_ACTIONS.ACCOUNT_UPDATED,
+    targetType: 'customer',
+    targetId: id,
+    targetLabel: before.account_number,
+    reason: input.reason ?? null,
+    metadata: { changedFields: changed },
+    request,
+  });
+
+  return findCustomerById(id);
 }
 
 /**
- * Change account status.
- *
- * `reason` is mandatory: a compliance record without a stated cause is not
- * useful. Disabling or locking an account also revokes its live sessions, so
- * the customer is signed out immediately rather than at token expiry.
+ * Change account status. `reason` is mandatory. Disabling or locking also
+ * revokes the customer's live sessions.
  */
-export function changeAccountStatus({ customerId, status, reason, admin, request }) {
+export async function changeAccountStatus({ customerId, status, reason, admin, request }) {
   if (!ACCOUNT_STATUSES.includes(status)) {
     throw validationFailed({ status: 'Unknown account status.' });
   }
@@ -468,31 +501,30 @@ export function changeAccountStatus({ customerId, status, reason, admin, request
     throw validationFailed({ reason: 'Please state the reason for this status change.' });
   }
 
-  const customer = findCustomerById(customerId);
+  const customer = await findCustomerById(customerId);
   if (!customer) throw notFound('Customer not found.');
-
-  if (customer.status === status) {
-    throw conflict(`This account is already ${status}.`);
-  }
+  if (customer.status === status) throw conflict(`This account is already ${status}.`);
 
   const previousStatus = customer.status;
+  const now = nowIso();
+  await setById(
+    C.customers,
+    customerId,
+    {
+      status,
+      status_reason: reason.trim(),
+      status_changed_at: now,
+      status_changed_by_admin_id: admin.id,
+      updated_at: now,
+    },
+    { merge: true },
+  );
 
-  const updated = transaction((db) => {
-    db.prepare(
-      `UPDATE customers
-          SET status = ?, status_reason = ?, status_changed_at = ?,
-              status_changed_by_admin_id = ?, updated_at = ?
-        WHERE id = ?`,
-    ).run(status, reason.trim(), nowIso(), admin.id, nowIso(), customerId);
-    return findCustomerById(customerId);
-  });
-
-  // A blocked account should not keep an authenticated session alive.
   if (status === 'disabled' || status === 'locked') {
-    revokeSessionsFor('customer', customerId);
+    await revokeSessionsFor('customer', customerId);
   }
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -505,18 +537,15 @@ export function changeAccountStatus({ customerId, status, reason, admin, request
     request,
   });
 
-  mirrorCustomerById(customerId);
-  return updated;
+  return findCustomerById(customerId);
 }
 
 /**
- * Credit money to a customer's account.
- *
- * This is the only path by which a balance increases. It posts a signed
- * `deposit` ledger row carrying the resulting balance, so funding history and
- * transaction history are the same auditable record.
+ * Credit money to a customer's account. The only path by which a balance
+ * increases. Posts a signed `deposit` ledger row carrying the resulting
+ * balance.
  */
-export function fundAccount({ customerId, amountCents, description, reference, admin, request }) {
+export async function fundAccount({ customerId, amountCents, description, reference, admin, request }) {
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
     throw validationFailed({ amount: 'Enter an amount greater than zero.' });
   }
@@ -524,22 +553,24 @@ export function fundAccount({ customerId, amountCents, description, reference, a
     throw validationFailed({ amount: 'Funding amount exceeds the permitted maximum.' });
   }
 
-  const customer = findCustomerById(customerId);
+  const customer = await findCustomerById(customerId);
   if (!customer) throw notFound('Customer not found.');
 
-  const result = transaction(() => {
-    const posted = postEntry({
-      customerId,
-      amountCents,
-      entryType: ENTRY_TYPES.DEPOSIT,
-      adminId: admin.id,
-      description: (description ?? '').trim() || 'Account funding',
-      referenceNumber: reference ?? null,
-    });
-    return posted;
-  });
+  const result = await transaction((txn) =>
+    postEntry(
+      {
+        customerId,
+        amountCents,
+        entryType: ENTRY_TYPES.DEPOSIT,
+        adminId: admin.id,
+        description: (description ?? '').trim() || 'Account funding',
+        referenceNumber: reference ?? null,
+      },
+      txn,
+    ),
+  );
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -557,14 +588,11 @@ export function fundAccount({ customerId, amountCents, description, reference, a
     request,
   });
 
-  mirrorCustomerById(customerId);
-  mirrorLedgerEntryById(result.entryId);
-
-  return { ...result, customer: findCustomerById(customerId) };
+  return { ...result, customer: await findCustomerById(customerId) };
 }
 
 /** Manual balance correction. Records a signed adjustment with a reason. */
-export function adjustBalance({ customerId, amountCents, reason, admin, request }) {
+export async function adjustBalance({ customerId, amountCents, reason, admin, request }) {
   if (!reason || !reason.trim()) {
     throw validationFailed({ reason: 'Please state the reason for this adjustment.' });
   }
@@ -572,20 +600,23 @@ export function adjustBalance({ customerId, amountCents, reason, admin, request 
     throw validationFailed({ amount: 'The adjustment amount cannot be zero.' });
   }
 
-  const customer = findCustomerById(customerId);
+  const customer = await findCustomerById(customerId);
   if (!customer) throw notFound('Customer not found.');
 
-  const result = transaction(() =>
-    postEntry({
-      customerId,
-      amountCents,
-      entryType: ENTRY_TYPES.ADJUSTMENT,
-      adminId: admin.id,
-      description: reason.trim(),
-    }),
+  const result = await transaction((txn) =>
+    postEntry(
+      {
+        customerId,
+        amountCents,
+        entryType: ENTRY_TYPES.ADJUSTMENT,
+        adminId: admin.id,
+        description: reason.trim(),
+      },
+      txn,
+    ),
   );
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -602,22 +633,17 @@ export function adjustBalance({ customerId, amountCents, reason, admin, request 
     request,
   });
 
-  mirrorCustomerById(customerId);
-  mirrorLedgerEntryById(result.entryId);
-
-  return { ...result, customer: findCustomerById(customerId) };
+  return { ...result, customer: await findCustomerById(customerId) };
 }
 
 /** Admin-created customer account (no self-service signup). */
 export async function adminCreateCustomer(input, admin, request) {
-  // When the admin does not choose a PIN, generate one from the CSPRNG and
-  // return it so it can be communicated out-of-band.
   const generatedPin = input.transferPin ? null : String(randomInt(1000, 10_000));
   const transferPin = input.transferPin ?? generatedPin;
 
   const customer = await registerCustomer({ ...input, transferPin }, request);
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,

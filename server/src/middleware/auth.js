@@ -3,15 +3,16 @@
  *
  * Role separation is enforced twice:
  *   1. In the cookie namespace - customers and admins hold different cookies.
- *   2. In SQL - a session lookup is constrained by `actor_type`, so an admin
- *      cookie can never resolve to a customer session even if a client sends
- *      it to a customer endpoint.
+ *   2. At lookup - a session resolution is constrained by `actor_type`, so an
+ *      admin cookie can never resolve to a customer session even if a client
+ *      sends it to a customer endpoint.
  *
- * Combined with separate tables (`customers` / `admins`) and separate password
- * columns, there is no path by which customer credentials grant admin rights.
+ * Combined with separate collections (`customers` / `admins`) and separate
+ * password fields, there is no path by which customer credentials grant admin
+ * rights.
  */
 
-import { one } from '../db/connection.js';
+import { C, getById } from '../db/firestore.js';
 import { resolveSession, cookieNameFor } from '../core/session.js';
 import { unauthorized, forbidden } from '../core/errors.js';
 
@@ -20,16 +21,12 @@ function tokenFor(req, actorType) {
   return req.cookies?.[cookieNameFor(actorType)] ?? null;
 }
 
-/** Load the customer/admins row for a session, or null. */
-function loadActor(session) {
+/** Load the customer/admin row for a session, or null. */
+async function loadActor(session) {
   if (session.actor_type === 'customer') {
-    const customer = one('SELECT * FROM customers WHERE id = ?', [session.actor_id]);
-    if (customer) return customer;
-  } else {
-    const admin = one('SELECT * FROM admins WHERE id = ?', [session.actor_id]);
-    if (admin) return admin;
+    return getById(C.customers, session.actor_id);
   }
-  return null;
+  return getById(C.admins, session.actor_id);
 }
 
 /**
@@ -37,25 +34,29 @@ function loadActor(session) {
  * Used by endpoints that change behaviour for signed-in users.
  */
 export function attachAuth(actorType) {
-  return (req, _res, next) => {
-    const session = resolveSession(tokenFor(req, actorType), actorType);
-    if (session) {
-      const actor = loadActor(session);
-      // A session whose actor row was deleted or disabled is treated as no session.
-      if (actor && (actorType !== 'admin' || actor.status === 'active')) {
-        req.auth = {
-          session,
-          actor,
-          actorId: actor.id,
-          actorType,
-          csrfToken: session.csrf_token,
-          isAdmin: actorType === 'admin',
-        };
-      } else {
-        req.auth = null;
+  return async (req, _res, next) => {
+    try {
+      const session = await resolveSession(tokenFor(req, actorType), actorType);
+      if (session) {
+        const actor = await loadActor(session);
+        // A session whose actor row was deleted or disabled is treated as no session.
+        if (actor && (actorType !== 'admin' || actor.status === 'active')) {
+          req.auth = {
+            session,
+            actor,
+            actorId: actor.id,
+            actorType,
+            csrfToken: session.csrf_token,
+            isAdmin: actorType === 'admin',
+          };
+        } else {
+          req.auth = null;
+        }
       }
+      next();
+    } catch (error) {
+      next(error);
     }
-    next();
   };
 }
 
@@ -113,9 +114,7 @@ export function requireUsableAccount(req, _res, next) {
  * CSRF: double-submit token verification.
  *
  * Every state-changing request must echo the session's CSRF token in the
- * `X-CSRF-Token` header. A cross-site form or `fetch` cannot read that header
- * value, and the cookie is `SameSite=Strict`, so the two together block CSRF.
- * Comparison is constant-time.
+ * `X-CSRF-Token` header. Comparison is constant-time.
  */
 export function requireCsrf(req, _res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();

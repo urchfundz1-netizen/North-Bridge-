@@ -6,22 +6,36 @@
  * allows transfers to institutions Northbridge has no relationship with.
  */
 
-import { one, many, run, nowIso } from '../db/connection.js';
+import {
+  C,
+  nowIso,
+  getById,
+  coll,
+  snapRows,
+  transaction,
+  txnGetById,
+  readCounter,
+  bumpCounter,
+  checkUnique,
+  claimUnique,
+  releaseUnique,
+  txnSet,
+} from '../db/firestore.js';
 import { conflict, notFound, validationFailed } from '../core/errors.js';
 import { recordAudit, AUDIT_ACTIONS } from './audit.js';
-import { mirrorRow } from './firestore.js';
 
-const BOOLEAN_FLAG = (value) => (value ? 1 : 0);
+/** Normalised key for the bank-name unique index. */
+const nameKey = (name) => `bankName:${String(name).trim().toLowerCase()}`;
 
 /**
  * Banks available for selection.
  * @param {{ includeInactive?: boolean, transferType?: string, search?: string }} options
  */
-export function listBanks({ includeInactive = false, transferType = null, search = null } = {}) {
-  const clauses = [];
-  const params = [];
+export async function listBanks({ includeInactive = false, transferType = null, search = null } = {}) {
+  const snap = await coll(C.banks).get();
+  let rows = snapRows(snap);
 
-  if (!includeInactive) clauses.push('is_active = 1');
+  if (!includeInactive) rows = rows.filter((bank) => bank.is_active);
 
   if (transferType && transferType !== 'all') {
     const column = {
@@ -30,48 +44,56 @@ export function listBanks({ includeInactive = false, transferType = null, search
       wire: 'supports_wire',
     }[transferType];
     if (!column) throw validationFailed({ transferType: 'Unknown transfer type.' });
-    clauses.push(`${column} = 1`);
+    rows = rows.filter((bank) => bank[column]);
   }
 
   if (search) {
-    clauses.push('(name LIKE ? OR country LIKE ? OR code LIKE ?)');
-    const like = `%${search}%`;
-    params.push(like, like, like);
+    const needle = String(search).toLowerCase();
+    rows = rows.filter((bank) =>
+      [bank.name, bank.country, bank.code].filter(Boolean).some((v) => String(v).toLowerCase().includes(needle)),
+    );
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  return many(`SELECT * FROM banks ${where} ORDER BY name COLLATE NOCASE ASC`, params);
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return rows;
 }
 
 export function findBankById(id) {
-  return one('SELECT * FROM banks WHERE id = ?', [id]);
+  return getById(C.banks, id);
 }
 
-export function createBank(input, admin, request) {
+export async function createBank(input, admin, request) {
   const name = input.name.trim();
-  const duplicate = one('SELECT id FROM banks WHERE name = ? COLLATE NOCASE', [name]);
-  if (duplicate) throw conflict(`${name} is already in the bank catalogue.`);
+  const now = nowIso();
 
-  const inserted = run(
-    `INSERT INTO banks
-       (name, code, country, routing_number_length,
-        supports_local, supports_international, supports_wire, is_active, created_by_admin_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
+  const id = await transaction(async (txn) => {
+    const bankId = await readCounter(txn, C.banks);
+    await checkUnique(txn, nameKey(name), bankId);
+
+    bumpCounter(txn, C.banks, bankId);
+    claimUnique(txn, nameKey(name), bankId);
+    txnSet(txn, C.banks, bankId, {
       name,
-      input.code?.trim() || null,
-      input.country?.trim() || 'United States',
-      input.routingNumberLength ?? null,
-      BOOLEAN_FLAG(input.supportsLocal ?? true),
-      BOOLEAN_FLAG(input.supportsInternational ?? true),
-      BOOLEAN_FLAG(input.supportsWire ?? true),
-      BOOLEAN_FLAG(input.isActive ?? true),
-      admin.id,
-    ],
-  );
+      code: input.code?.trim() || null,
+      country: input.country?.trim() || 'United States',
+      routing_number_length: input.routingNumberLength ?? null,
+      supports_local: input.supportsLocal ?? true,
+      supports_international: input.supportsInternational ?? true,
+      supports_wire: input.supportsWire ?? true,
+      is_active: input.isActive ?? true,
+      created_by_admin_id: admin.id,
+      created_at: now,
+      updated_at: now,
+    });
+    return bankId;
+  }).catch((error) => {
+    if (error.code === 'unique_violation') {
+      throw conflict(`${name} is already in the bank catalogue.`);
+    }
+    throw error;
+  });
 
-  const id = Number(inserted.lastInsertRowid);
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -83,13 +105,11 @@ export function createBank(input, admin, request) {
     request,
   });
 
-  const bank = findBankById(id);
-  mirrorRow('banks', bank);
-  return bank;
+  return findBankById(id);
 }
 
-export function updateBank(id, input, admin, request) {
-  const before = findBankById(id);
+export async function updateBank(id, input, admin, request) {
+  const before = await findBankById(id);
   if (!before) throw notFound('Bank not found.');
 
   const columns = {
@@ -103,41 +123,38 @@ export function updateBank(id, input, admin, request) {
     isActive: 'is_active',
   };
 
-  const assignments = [];
-  const params = [];
-
+  const patch = {};
   for (const [key, column] of Object.entries(columns)) {
     if (input[key] === undefined) continue;
     let value = input[key];
-    if (typeof input[key] === 'boolean') value = BOOLEAN_FLAG(input[key]);
     if (typeof value === 'string') value = value.trim() || null;
-    assignments.push(`${column} = ?`);
-    params.push(value);
+    patch[column] = value;
   }
 
-  if (assignments.length === 0) return before;
+  if (Object.keys(patch).length === 0) return before;
 
-  if (input.name !== undefined) {
-    const clash = one('SELECT id FROM banks WHERE name = ? COLLATE NOCASE AND id <> ?', [
-      input.name.trim(),
-      id,
-    ]);
-    if (clash) throw conflict('Another bank already uses that name.');
-  }
+  const renamed = patch.name !== undefined && patch.name !== before.name;
+  patch.updated_at = nowIso();
 
-  assignments.push('updated_at = ?');
-  params.push(nowIso(), id);
+  await transaction(async (txn) => {
+    const current = await txnGetById(txn, C.banks, id);
+    if (!current) throw notFound('Bank not found.');
 
-  try {
-    run(`UPDATE banks SET ${assignments.join(', ')} WHERE id = ?`, params);
-  } catch (error) {
-    if (String(error.message).includes('UNIQUE constraint failed: banks.name')) {
+    if (renamed) {
+      await checkUnique(txn, nameKey(patch.name), id);
+      releaseUnique(txn, nameKey(before.name));
+      claimUnique(txn, nameKey(patch.name), id);
+    }
+
+    txnSet(txn, C.banks, id, patch, { merge: true });
+  }).catch((error) => {
+    if (error.code === 'unique_violation') {
       throw conflict('Another bank already uses that name.');
     }
     throw error;
-  }
+  });
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -154,24 +171,22 @@ export function updateBank(id, input, admin, request) {
     request,
   });
 
-  const updated = findBankById(id);
-  mirrorRow('banks', updated);
-  return updated;
+  return findBankById(id);
 }
 
 /**
- * Retire a bank. This is a soft delete (`is_active = 0`) rather than a DELETE:
- * historical transfers and receipts reference it, and deleting the row would
- * break those references or silently strip context from settled records.
+ * Retire a bank. Soft delete (`is_active = false`): historical transfers and
+ * receipts reference it, and removing the row would strip context from settled
+ * records.
  */
-export function deactivateBank(id, admin, reason, request) {
-  const bank = findBankById(id);
+export async function deactivateBank(id, admin, reason, request) {
+  const bank = await findBankById(id);
   if (!bank) throw notFound('Bank not found.');
   if (!bank.is_active) throw conflict(`${bank.name} is already inactive.`);
 
-  run('UPDATE banks SET is_active = 0, updated_at = ? WHERE id = ?', [nowIso(), id]);
+  await coll(C.banks).doc(String(id)).set({ is_active: false, updated_at: nowIso() }, { merge: true });
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorId: admin.id,
     actorEmail: admin.email,
@@ -183,7 +198,5 @@ export function deactivateBank(id, admin, reason, request) {
     request,
   });
 
-  const retired = findBankById(id);
-  mirrorRow('banks', retired);
-  return retired;
+  return findBankById(id);
 }
