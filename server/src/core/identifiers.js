@@ -1,13 +1,14 @@
 /**
  * Account number and reference number generation.
  *
- * All identifiers are generated from a CSPRNG. Each generator loops on a unique
- * constraint violation, so collisions are resolved by retrying rather than by
- * ever risking a duplicate.
+ * All identifiers are generated from a CSPRNG. Account numbers are additionally
+ * checked against the shared unique index inside the registration transaction,
+ * so a collision is resolved by retrying rather than by ever risking a
+ * duplicate.
  */
 
 import { randomInt, randomBytes } from 'node:crypto';
-import { one } from '../db/connection.js';
+import { uniqueRef } from '../db/firestore.js';
 
 /**
  * 10-digit customer account number, e.g. `4810273956`.
@@ -19,14 +20,17 @@ export function generateAccountNumber() {
 }
 
 /**
- * Find an account number that is not already in use.
- * @param {number} attempts safety bound against a corrupt database
+ * Find an account number whose unique index is still free. Read-only: call in
+ * the read phase of a transaction and claim the winner with `claimUnique`.
+ *
+ * @param {import('firebase-admin/firestore').Transaction} txn
+ * @param {number} attempts safety bound against a corrupt index
  */
-export function generateUniqueAccountNumber(attempts = 25) {
+export async function generateUniqueAccountNumber(txn, attempts = 25) {
   for (let i = 0; i < attempts; i += 1) {
     const candidate = generateAccountNumber();
-    const taken = one('SELECT id FROM customers WHERE account_number = ?', [candidate]);
-    if (!taken) return candidate;
+    const snap = await txn.get(uniqueRef(`customerAccount:${candidate}`));
+    if (!snap.exists) return candidate;
   }
   throw new Error('Unable to allocate a unique account number');
 }

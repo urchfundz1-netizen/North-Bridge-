@@ -2,21 +2,27 @@
  * Firestore access layer (replaces db/connection.js).
  *
  * SQLite gave us three things Firestore does not: SQL constraints, triggers,
- * and synchronous transactions. This module rebuilds the primitives the rest
- * of the server needs so the services can be ported without every call site
- * inventing its own convention:
+ * and synchronous transactions. This module rebuilds the primitives the rest of
+ * the server needs so the services port without every call site inventing its
+ * own convention:
  *
- *   * `transaction(fn)`        - async ACID transaction (like BEGIN IMMEDIATE).
- *   * `nextId(name)`           - auto-increment integer ids via a counter doc,
- *                                so numeric ids survive the migration.
- *   * `claimUnique(key,id)`    - a stand-in for UNIQUE constraints: a dedicated
- *                                index document per unique value, claimed and
- *                                released inside the same transaction as the row
- *                                it protects. Firestore has no unique index, so
- *                                this is how "one account per email" is kept.
+ *   * `transaction(fn)`  - async ACID transaction (like BEGIN IMMEDIATE).
+ *   * `readCounter()` /  - auto-increment integer ids from a counter document,
+ *     `bumpCounter()`     so the numeric ids survive the migration.
+ *   * `checkUnique()` /  - a stand-in for UNIQUE constraints: one index
+ *     `claimUnique()`     document per unique value, checked and claimed in the
+ *                         same transaction as the row it protects.
  *
- * Document ids are the same numeric keys the SQLite schema used (stringified),
- * so serializers, URLs and the Firestore mirror keep working unchanged.
+ * Firestore transactions may not read after they write (the SDK enforces
+ * `READ_AFTER_WRITE_ERROR_MSG`). The primitives are therefore split into
+ * read helpers and write helpers and callers perform all reads first, then all
+ * writes. Read helpers are `txnGetById`, `readCounter`, `checkUnique`; write
+ * helpers are `txnSet`, `txnDelete`, `bumpCounter`, `claimUnique`,
+ * `releaseUnique`.
+ *
+ * Documents use the same snake_case field names the SQLite tables used, so the
+ * existing serializers, receipts and mirror keep working unchanged. Numeric ids
+ * are the same keys SQLite assigned (stringified as Firestore requires).
  */
 
 import { initializeApp, getApps, getApp } from 'firebase-admin/app';
@@ -33,9 +39,10 @@ export function initFirestore() {
   if (_db) return _db;
   const app = getApps().length
     ? getApp()
-    : initializeApp({ projectId: config.firebase.projectId || process.env.GCLOUD_PROJECT || 'demo-northbridge' });
+    : initializeApp({
+        projectId: config.firebase.projectId || process.env.GCLOUD_PROJECT || 'demo-northbridge',
+      });
   _db = getFirestore(app);
-  // Match SQLite's "everything is UTC ISO" convention the serializers expect.
   _db.settings({ ignoreUndefinedProperties: true });
   return _db;
 }
@@ -77,13 +84,36 @@ export { FieldValue };
 export const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 /* -------------------------------------------------------------------------- */
+/* References                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export function coll(name) {
+  return db().collection(name);
+}
+
+export function docRef(name, id) {
+  return db().collection(name).doc(String(id));
+}
+
+/** Firestore doc ids may not contain '/'. Unique keys are namespaced with ':'. */
+export function encodeKey(key) {
+  return String(key).replace(/\//g, '%2F');
+}
+
+/** Document reference for a unique value in the shared index collection. */
+export function uniqueRef(key) {
+  return db().collection(C.refs).doc(encodeKey(key));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Transactions                                                                */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Run `fn` inside a Firestore transaction. `fn` receives the transaction and
- * may be async. Firestore retries the whole body on contention, so `fn` must be
- * free of side effects other than reads/writes on `txn`.
+ * Run `fn` inside a Firestore transaction. `fn` receives the transaction, may
+ * be async, and MUST perform all reads before any writes (the SDK rejects the
+ * opposite). Firestore retries the body on contention, so `fn` must not mutate
+ * application state.
  *
  * @template T
  * @param {(txn: import('firebase-admin/firestore').Transaction) => Promise<T>|T} fn
@@ -94,99 +124,98 @@ export function transaction(fn) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Ids                                                                         */
+/* Document reads / writes (non-transactional)                                 */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Allocate the next integer id for a named sequence, inside a transaction.
- * @param {import('firebase-admin/firestore').Transaction} txn
- * @param {string} name e.g. 'customers'
- * @returns {Promise<number>}
- */
-export async function nextId(txn, name) {
-  const ref = db().collection(C.counters).doc(name);
-  const snap = await txn.get(ref);
-  const value = Number(snap.exists ? snap.data().value : 0) + 1;
-  txn.set(ref, { value }, { merge: true });
-  return value;
+/** Numeric ids come back as strings from Firestore; restore numbers. */
+export function coerceId(id) {
+  return /^\d+$/.test(id) ? Number(id) : id;
+}
+
+/** Map a query snapshot to plain `{ id, ...data }` rows. */
+export function snapRows(snap) {
+  return snap.docs.map((doc) => ({ id: coerceId(doc.id), ...doc.data() }));
+}
+
+/** Read one document by id. Returns `{ id, ...data }` or null. */
+export async function getById(collection, id) {
+  if (id === undefined || id === null || id === '') return null;
+  const snap = await docRef(collection, id).get();
+  return snap.exists ? { id: coerceId(snap.id), ...snap.data() } : null;
+}
+
+/** Write (replace or merge) a document by id. */
+export async function setById(collection, id, data, { merge = false } = {}) {
+  await docRef(collection, id).set(data, { merge });
+}
+
+/** Delete a document. */
+export async function deleteById(collection, id) {
+  await docRef(collection, id).delete();
 }
 
 /* -------------------------------------------------------------------------- */
-/* Uniqueness                                                                  */
+/* Transaction read helpers                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Read one document inside a transaction. Returns `{ id, ...data }` or null. */
+export async function txnGetById(txn, collection, id) {
+  if (id === undefined || id === null || id === '') return null;
+  const snap = await txn.get(docRef(collection, id));
+  return snap.exists ? { id: coerceId(snap.id), ...snap.data() } : null;
+}
+
+/** Read a raw reference inside a transaction. */
+export function txnGet(txn, ref) {
+  return txn.get(ref);
+}
+
+/** Read the next integer id for a sequence (does not consume it). */
+export async function readCounter(txn, name) {
+  const snap = await txn.get(coll(C.counters).doc(name));
+  return Number(snap.exists ? snap.data().value : 0) + 1;
+}
+
 /**
- * Reserve a unique value (email, account number, reference, ...). Throws if it
- * is already held by a different owner. Must be called inside a transaction,
- * before writing the row that owns the value.
- *
- * @param {import('firebase-admin/firestore').Transaction} txn
- * @param {string} key   e.g. 'customerEmail:ada@example.com'
- * @param {number|string} ownerId the row id that owns this value
+ * Verify a unique value is free (or already owned by `ownerId`). Throws a
+ * `unique_violation` error when it is held by someone else. Read-only: pair
+ * with `claimUnique` in the write phase.
  */
-export async function claimUnique(txn, key, ownerId) {
-  const ref = db().collection(C.refs).doc(encodeKey(key));
-  const snap = await txn.get(ref);
+export async function checkUnique(txn, key, ownerId) {
+  const snap = await txn.get(uniqueRef(key));
   if (snap.exists && String(snap.data().ownerId) !== String(ownerId)) {
     const error = new Error(`unique_violation:${key}`);
     error.code = 'unique_violation';
     error.key = key;
     throw error;
   }
-  txn.set(ref, { key, ownerId: String(ownerId) });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Transaction write helpers                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** Persist the consumed counter value. Must run in the write phase. */
+export function bumpCounter(txn, name, value) {
+  txn.set(coll(C.counters).doc(name), { value }, { merge: true });
+}
+
+/** Reserve a unique value for `ownerId`. Write-phase counterpart of checkUnique. */
+export function claimUnique(txn, key, ownerId) {
+  txn.set(uniqueRef(key), { key, ownerId: String(ownerId) });
 }
 
 /** Release a unique value (row deleted / value changed). */
 export function releaseUnique(txn, key) {
-  txn.delete(db().collection(C.refs).doc(encodeKey(key)));
-}
-
-/** Firestore doc ids may not contain '/'. Index keys are namespaced with ':'. */
-function encodeKey(key) {
-  return key.replace(/\//g, '%2F');
-}
-
-/* -------------------------------------------------------------------------- */
-/* Reads / writes                                                              */
-/* -------------------------------------------------------------------------- */
-
-/** Read one document by id. Returns `{ id, ...data }` or null. */
-export async function getById(collection, id) {
-  if (id === undefined || id === null || id === '') return null;
-  const snap = await db().collection(collection).doc(String(id)).get();
-  return snap.exists ? { id: coerceId(snap.id), ...snap.data() } : null;
-}
-
-/** Read one document inside a transaction. */
-export async function txnGetById(txn, collection, id) {
-  if (id === undefined || id === null || id === '') return null;
-  const snap = await txn.get(db().collection(collection).doc(String(id)));
-  return snap.exists ? { id: coerceId(snap.id), ...snap.data() } : null;
-}
-
-/** Write (replace or merge) a document by id. */
-export async function setById(collection, id, data, { merge = false } = {}) {
-  await db().collection(collection).doc(String(id)).set(data, { merge });
+  txn.delete(uniqueRef(key));
 }
 
 /** Transactional write. */
 export function txnSet(txn, collection, id, data, { merge = false } = {}) {
-  txn.set(db().collection(collection).doc(String(id)), data, { merge });
+  txn.set(docRef(collection, id), data, { merge });
 }
 
-/** Transactional create from a plain object, allocating an id first. */
-export async function txnCreate(txn, collection, data) {
-  const id = await nextId(txn, collection);
-  txn.set(db().collection(collection).doc(String(id)), data);
-  return id;
-}
-
-/** Delete a document. */
-export async function deleteById(collection, id) {
-  await db().collection(collection).doc(String(id)).delete();
-}
-
-/** Numeric ids come back as strings from Firestore; restore numbers. */
-function coerceId(id) {
-  return /^\d+$/.test(id) ? Number(id) : id;
+/** Transactional delete. */
+export function txnDelete(txn, collection, id) {
+  txn.delete(docRef(collection, id));
 }

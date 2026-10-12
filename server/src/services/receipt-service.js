@@ -1,34 +1,36 @@
 /**
  * Receipt generation.
  *
- * Lifecycle, and the reason it is written this way:
+ * Lifecycle:
+ *   submit  -> minted immediately, status Pending, carrying the promised
+ *              arrival window.
+ *   review  -> the same document is rewritten in place to Approved, Rejected
+ *              or Cancelled. Receipt number and issue time never change.
+ *   settled -> frozen. Once funds have moved the snapshot stops changing.
  *
- *   submit   -> minted immediately, status Pending, carrying the promised
- *               arrival window. The customer has just confirmed their transfer
- *               PIN, so they leave with a numbered document in hand rather than
- *               an empty slot and a promise to check back later.
- *   review   -> the same document is rewritten in place to Approved, Rejected
- *               or Cancelled. Receipt number and issue time never change, so
- *               the document a customer printed at submit time and the one they
- *               are looking at now are recognisably the same receipt.
- *   settled  -> frozen. Once funds have actually moved the snapshot stops
- *               changing: if an administrator later renames the bank or edits a
- *               customer's address, a settled receipt must still read exactly as
- *               it did on the day the money moved.
- *
- * So a pending receipt is deliberately mutable and a settled one is not. That
- * split is the whole design: the snapshot guarantee is worth keeping exactly
- * where it was previously claimed - on money that has left the account.
- *
- * The stored payload is also what the printable receipt view renders, so the
- * customer and the admin see byte-identical documents.
+ * The stored `payload_json` is what the printable view renders, so the customer
+ * and the admin see byte-identical documents. A few transfer fields are also
+ * denormalised onto the receipt so the customer archive can be listed without a
+ * join.
  */
 
-import { one, many, run, nowIso } from '../db/connection.js';
+import {
+  C,
+  nowIso,
+  getById,
+  setById,
+  snapRows,
+  coll,
+  transaction,
+  readCounter,
+  bumpCounter,
+  checkUnique,
+  claimUnique,
+  txnSet,
+} from '../db/firestore.js';
 import { generateReceiptNumber } from '../core/identifiers.js';
 import { formatCents } from '../core/money.js';
 import { getSetting } from './settings.js';
-import { mirror } from './firestore.js';
 
 const TYPE_LABELS = {
   local: 'Local Transfer',
@@ -43,44 +45,17 @@ const STATUS_LABELS = {
   cancelled: 'Cancelled',
 };
 
-/**
- * Statuses that cannot change again. A receipt in one of these is a permanent
- * record and is never rewritten.
- */
 const SETTLED_STATUSES = new Set(['approved']);
 
-/**
- * The arrival promise shown the moment the transfer is submitted.
- *
- * Stored on the receipt as text alongside the machine-readable timestamp, for
- * the same reason amounts are stored as cents *and* a display string: a receipt
- * printed today must not re-word itself tomorrow because a constant moved.
- */
 const ARRIVAL_WINDOW_HOURS = 24;
 const ARRIVAL_HINT = `Money will arrive within ${ARRIVAL_WINDOW_HOURS} hours.`;
 
-/**
- * Exported so the wording the customer sees in the submit confirmation comes
- * from the same constant that is frozen into the receipt. Two copies of this
- * sentence would be free to drift apart.
- */
 export { ARRIVAL_HINT, ARRIVAL_WINDOW_HOURS };
 
-/** requested_at + the arrival window, as an ISO timestamp. */
 function arrivalBy(requestedAt) {
   return new Date(new Date(requestedAt).getTime() + ARRIVAL_WINDOW_HOURS * 3_600_000).toISOString();
 }
 
-/**
- * Build the receipt document from the current state of a transfer.
- *
- * Pure: it reads rows, it writes nothing. Both the mint and the refresh path go
- * through here, so a pending receipt and its settled successor are guaranteed to
- * be built the same way and cannot drift apart.
- *
- * `receiptNumber` and `issuedAt` are passed in rather than derived, because a
- * refresh must preserve the identity the customer was already given.
- */
 function buildPayload(transfer, { receiptNumber, issuedAt }) {
   const settled = SETTLED_STATUSES.has(transfer.status);
 
@@ -105,12 +80,8 @@ function buildPayload(transfer, { receiptNumber, issuedAt }) {
       statusLabel: STATUS_LABELS[transfer.status] ?? transfer.status,
       requestedAt: transfer.requested_at,
       settledAt: transfer.settled_at,
-      // The commitment made at submit time. Kept on the document even after the
-      // money lands, because it records what the customer was promised and
-      // whether that promise was met.
       expectedArrivalBy: arrivalBy(transfer.requested_at),
       arrivalHint: ARRIVAL_HINT,
-      // True once the document can no longer change.
       final: settled,
     },
     recipient: {
@@ -123,17 +94,12 @@ function buildPayload(transfer, { receiptNumber, issuedAt }) {
       country: transfer.recipient_country,
     },
     amounts: {
-      // Stored as integer cents plus a display string. The integer is the
-      // source of truth; the string exists so a historical receipt never
-      // re-renders differently under a changed currency format.
       amountCents: transfer.amount_cents,
       feeCents: transfer.fee_cents,
       totalDebitCents: transfer.total_debit_cents,
       amountFormatted: formatCents(transfer.amount_cents),
       feeFormatted: formatCents(transfer.fee_cents),
       totalDebitFormatted: formatCents(transfer.total_debit_cents),
-      // While pending nothing has been debited, so the receipt must not present
-      // the total as money that has already left the account.
       debited: settled,
     },
     description: transfer.description,
@@ -143,38 +109,61 @@ function buildPayload(transfer, { receiptNumber, issuedAt }) {
 }
 
 /** The transfer joined with the customer fields the receipt records. */
-function loadTransferForReceipt(transferId) {
-  return one(
-    `SELECT t.*,
-            c.full_name        AS customer_name,
-            c.account_number   AS customer_account_number,
-            c.email            AS customer_email
-       FROM transfers t
-       JOIN customers c ON c.id = t.customer_id
-      WHERE t.id = ?`,
-    [transferId],
-  );
+async function loadTransferForReceipt(transferId) {
+  const transfer = await getById(C.transfers, transferId);
+  if (!transfer) return null;
+  const customer = await getById(C.customers, transfer.customer_id);
+  return {
+    ...transfer,
+    customer_name: customer?.full_name ?? null,
+    customer_account_number: customer?.account_number ?? null,
+    customer_email: customer?.email ?? null,
+  };
+}
+
+function receiptDoc(transfer, { receiptNumber, issuedAt, payload }) {
+  return {
+    receipt_number: receiptNumber,
+    transfer_id: transfer.id,
+    customer_id: transfer.customer_id,
+    issued_at: issuedAt,
+    status: transfer.status,
+    transfer_type: transfer.transfer_type,
+    amount_cents: transfer.amount_cents,
+    fee_cents: transfer.fee_cents,
+    total_debit_cents: transfer.total_debit_cents,
+    recipient_name: transfer.recipient_name,
+    recipient_bank_name: transfer.recipient_bank_name,
+    reference_number: transfer.reference_number,
+    payload_json: JSON.stringify(payload),
+  };
+}
+
+/** Find the receipt row for a transfer (transfer_id is unique). */
+async function findByTransferId(transferId, customerId = null) {
+  let query = coll(C.receipts).where('transfer_id', '==', transferId);
+  if (customerId !== null && customerId !== undefined) {
+    query = query.where('customer_id', '==', customerId);
+  }
+  const snap = await query.limit(1).get();
+  if (snap.empty) return null;
+  const doc = snap.docs[0];
+  return { id: doc.id, ...doc.data() };
 }
 
 /**
- * Mint the receipt for a transfer.
- *
- * Called as soon as the customer confirms their transfer PIN, so it runs for a
- * transfer that is still `pending` as well as one that settled inline.
- * Idempotent: if a receipt already exists it is returned unchanged.
+ * Mint the receipt for a transfer. Idempotent: an existing receipt is returned
+ * unchanged.
  *
  * @param {number} transferId
- * @returns {object|null} the receipt row including `payload`
+ * @returns {Promise<object|null>} the receipt including `payload`
  */
-export function issueReceipt(transferId) {
-  const existing = one('SELECT * FROM receipts WHERE transfer_id = ?', [transferId]);
+export async function issueReceipt(transferId) {
+  const existing = await findByTransferId(transferId);
   if (existing) return hydrate(existing);
 
-  const transfer = loadTransferForReceipt(transferId);
+  const transfer = await loadTransferForReceipt(transferId);
   if (!transfer) throw new Error(`Cannot issue a receipt: transfer ${transferId} does not exist`);
-
-  // Rejected and cancelled transfers never mint a fresh receipt: they are only
-  // ever reached by minting at submit time, or by rewriting an existing one.
   if (transfer.status !== 'pending' && transfer.status !== 'approved') {
     throw new Error(
       `Cannot issue a receipt: transfer ${transferId} is ${transfer.status}, which is not a state that issues one`,
@@ -185,51 +174,53 @@ export function issueReceipt(transferId) {
   const issuedAt = nowIso();
   const payload = buildPayload(transfer, { receiptNumber, issuedAt });
 
-  run(
-    'INSERT INTO receipts (receipt_number, transfer_id, customer_id, payload_json, issued_at) VALUES (?, ?, ?, ?, ?)',
-    [receiptNumber, transfer.id, transfer.customer_id, JSON.stringify(payload), issuedAt],
-  );
+  await transaction(async (txn) => {
+    const id = await readCounter(txn, C.receipts);
+    await checkUnique(txn, `receiptTransfer:${transfer.id}`, id);
+    bumpCounter(txn, C.receipts, id);
+    claimUnique(txn, `receiptTransfer:${transfer.id}`, id);
+    claimUnique(txn, `receiptNumber:${receiptNumber}`, id);
+    txnSet(txn, C.receipts, id, receiptDoc(transfer, { receiptNumber, issuedAt, payload }));
+  });
 
-  mirrorReceipt(transfer.id);
-
-  // Returned hydrated, so every caller receives the same shape regardless of
-  // whether the receipt already existed.
   return receiptForTransfer(transfer.id);
 }
 
 /**
- * Rewrite an existing receipt to match the transfer's current state.
- *
- * Runs when a pending transfer is approved, rejected or cancelled, so the
- * document the customer already holds stops claiming "Pending" once that is no
- * longer true.
- *
- * Refuses to touch a receipt whose transfer has already settled. That is the
- * freeze: once funds have moved, the snapshot is a permanent record and later
- * edits to a bank name or an address must not rewrite history.
- *
- * @param {number} transferId
- * @returns {object|null} the refreshed receipt, or null when there is none
+ * Rewrite an existing receipt to match the transfer's current state. Refuses to
+ * touch a receipt whose transfer has already settled.
  */
-export function refreshReceipt(transferId) {
-  const existing = one('SELECT * FROM receipts WHERE transfer_id = ?', [transferId]);
+export async function refreshReceipt(transferId) {
+  const existing = await findByTransferId(transferId);
   if (!existing) return null;
 
   const current = hydrate(existing);
   if (current?.payload?.transaction?.final) return current;
 
-  const transfer = loadTransferForReceipt(transferId);
+  const transfer = await loadTransferForReceipt(transferId);
   if (!transfer) return current;
 
   const payload = buildPayload(transfer, {
-    // Identity the customer was already given, preserved verbatim.
     receiptNumber: current.receiptNumber,
     issuedAt: current.issuedAt,
   });
 
-  run('UPDATE receipts SET payload_json = ? WHERE id = ?', [JSON.stringify(payload), existing.id]);
-
-  mirrorReceipt(transferId);
+  await setById(
+    C.receipts,
+    existing.id,
+    {
+      status: transfer.status,
+      transfer_type: transfer.transfer_type,
+      amount_cents: transfer.amount_cents,
+      fee_cents: transfer.fee_cents,
+      total_debit_cents: transfer.total_debit_cents,
+      recipient_name: transfer.recipient_name,
+      recipient_bank_name: transfer.recipient_bank_name,
+      reference_number: transfer.reference_number,
+      payload_json: JSON.stringify(payload),
+    },
+    { merge: true },
+  );
 
   return receiptForTransfer(transferId);
 }
@@ -254,64 +245,26 @@ export function hydrate(receiptRow) {
 }
 
 /** Receipt for a transfer, or null when the transfer has not settled. */
-export function receiptForTransfer(transferId) {
-  return hydrate(one('SELECT * FROM receipts WHERE transfer_id = ?', [transferId]));
+export async function receiptForTransfer(transferId) {
+  return hydrate(await findByTransferId(transferId));
 }
 
-/**
- * Copy the stored receipt into the Firestore mirror.
- *
- * The row keeps `payload_json` verbatim but the mirror stores the parsed
- * document instead, so it is queryable field by field rather than as a blob.
- */
-function mirrorReceipt(transferId) {
-  const row = one('SELECT * FROM receipts WHERE transfer_id = ?', [transferId]);
-  if (!row) return;
-  const { payload_json, ...rest } = row;
-  let payload = null;
-  try {
-    payload = JSON.parse(payload_json);
-  } catch {
-    payload = null;
-  }
-  mirror('receipts', row.id, { ...rest, payload });
+/** Receipt owned by a specific customer. */
+export async function receiptForCustomerTransfer(transferId, customerId) {
+  return hydrate(await findByTransferId(transferId, customerId));
 }
 
-/** Receipt owned by a specific customer - used by the customer portal so a
- *  customer can never read another customer's document by guessing an id. */
-export function receiptForCustomerTransfer(transferId, customerId) {
-  return hydrate(
-    one('SELECT * FROM receipts WHERE transfer_id = ? AND customer_id = ?', [transferId, customerId]),
-  );
-}
-
-/**
- * Paginated receipts for a customer, newest first.
- *
- * Settled transfers only. Every transfer now carries a receipt from submit time,
- * so without this filter the archive would list documents for money that never
- * left the account. This list answers "what has my account actually paid?".
- * A still-pending receipt is reached through the transfer detail page instead.
- */
-export function listCustomerReceipts(customerId, { limit = 20, offset = 0 } = {}) {
-  const rows = many(
-    `SELECT r.id, r.receipt_number, r.transfer_id, r.issued_at,
-            t.transfer_type, t.amount_cents, t.fee_cents, t.total_debit_cents,
-            t.recipient_name, t.recipient_bank_name, t.status, t.reference_number
-       FROM receipts r
-       JOIN transfers t ON t.id = r.transfer_id
-      WHERE r.customer_id = ? AND t.status = 'approved'
-      ORDER BY r.issued_at DESC, r.id DESC
-      LIMIT ? OFFSET ?`,
-    [customerId, limit, offset],
-  );
-
-  const { total } = one(
-    `SELECT COUNT(*) AS total
-       FROM receipts r JOIN transfers t ON t.id = r.transfer_id
-      WHERE r.customer_id = ? AND t.status = 'approved'`,
-    [customerId],
-  );
-
-  return { rows, total };
+/** Paginated settled receipts for a customer, newest first. */
+export async function listCustomerReceipts(customerId, { limit = 20, offset = 0 } = {}) {
+  const snap = await coll(C.receipts)
+    .where('customer_id', '==', customerId)
+    .where('status', '==', 'approved')
+    .get();
+  const rows = snapRows(snap);
+  rows.sort((a, b) => {
+    if (a.issued_at === b.issued_at) return b.id - a.id;
+    return a.issued_at < b.issued_at ? 1 : -1;
+  });
+  const total = rows.length;
+  return { rows: rows.slice(offset, offset + limit), total };
 }

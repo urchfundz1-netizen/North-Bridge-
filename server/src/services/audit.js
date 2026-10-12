@@ -2,12 +2,11 @@
  * Audit logging.
  *
  * Every privileged or financially significant action is recorded here. The
- * table is append-only (enforced by triggers in schema.sql), so an attacker who
- * gains write access to the database still cannot erase the trail.
+ * collection is written through a single append path and never updated or
+ * deleted, so it stands in for the SQLite append-only trigger.
  */
 
-import { one, run } from '../db/connection.js';
-import { mirrorRow } from './firestore.js';
+import { C, transaction, readCounter, bumpCounter, txnSet, getById, nowIso } from '../db/firestore.js';
 
 /** Canonical action names, so logs are searchable and typos impossible. */
 export const AUDIT_ACTIONS = {
@@ -46,6 +45,9 @@ export const AUDIT_ACTIONS = {
  * break the business operation the user actually asked for. Failures are
  * logged to stderr so they are still visible in monitoring.
  *
+ * Awaited by callers where practical, but safe to leave unawaited because it
+ * swallows its own errors.
+ *
  * @param {object} entry
  * @param {'admin'|'customer'|'system'} entry.actorType
  * @param {number|null} entry.actorId
@@ -57,7 +59,7 @@ export const AUDIT_ACTIONS = {
  * @param {object} [entry.metadata]
  * @param {object} [entry.request]    Express request, for IP + user agent
  */
-export function recordAudit(entry) {
+export async function recordAudit(entry) {
   const {
     actorType = 'system',
     actorId = null,
@@ -72,28 +74,24 @@ export function recordAudit(entry) {
   } = entry;
 
   try {
-    const inserted = run(
-      `INSERT INTO audit_logs
-         (actor_type, actor_id, actor_email, action, target_type, target_id,
-          target_label, reason, metadata_json, ip_address, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        actorType,
-        actorId,
-        actorEmail,
+    await transaction(async (txn) => {
+      const id = await readCounter(txn, C.audit);
+      bumpCounter(txn, C.audit, id);
+      txnSet(txn, C.audit, id, {
+        actor_type: actorType,
+        actor_id: actorId,
+        actor_email: actorEmail,
         action,
-        targetType,
-        targetId === null || targetId === undefined ? null : String(targetId),
-        targetLabel,
+        target_type: targetType,
+        target_id: targetId === null || targetId === undefined ? null : String(targetId),
+        target_label: targetLabel,
         reason,
-        metadata ? JSON.stringify(metadata) : null,
-        request ? clientIp(request) : null,
-        request ? truncate(request.get?.('user-agent'), 300) : null,
-      ],
-    );
-
-    const row = one('SELECT * FROM audit_logs WHERE id = ?', [Number(inserted.lastInsertRowid)]);
-    if (row) mirrorRow('audit_logs', row);
+        metadata_json: metadata ? JSON.stringify(metadata) : null,
+        ip_address: request ? clientIp(request) : null,
+        user_agent: request ? truncate(request.get?.('user-agent'), 300) : null,
+        created_at: nowIso(),
+      });
+    });
   } catch (error) {
     console.error('[audit] failed to record entry:', action, error.message);
   }
@@ -113,5 +111,5 @@ function truncate(value, max) {
 
 /** Read a single audit row by id. */
 export function findAuditById(id) {
-  return one('SELECT * FROM audit_logs WHERE id = ?', [id]);
+  return getById(C.audit, id);
 }
