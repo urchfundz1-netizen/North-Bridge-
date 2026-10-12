@@ -7,7 +7,18 @@
  */
 
 import { config } from '../core/config.js';
-import { db, C, nowIso, nextId, transaction } from './firestore.js';
+import {
+  db,
+  C,
+  nowIso,
+  transaction,
+  txnGet,
+  txnSet,
+  readCounter,
+  bumpCounter,
+  claimUnique,
+  uniqueRef,
+} from './firestore.js';
 
 export const DEFAULT_SETTINGS = {
   require_transfer_approval: config.banking.requireTransferApproval ? '1' : '0',
@@ -54,12 +65,12 @@ export async function seedBanks() {
   for (const bank of STARTER_BANKS) {
     const created = await transaction(async (txn) => {
       const key = `bankName:${bank.name.toLowerCase()}`;
-      const idx = await txn.get(db().collection(C.refs).doc(key));
+      const idx = await txnGet(txn, uniqueRef(key));
       if (idx.exists) return false;
 
-      const id = await nextId(txn, C.banks);
+      const id = await readCounter(txn, C.banks);
       const now = nowIso();
-      txn.set(db().collection(C.banks).doc(String(id)), {
+      txnSet(txn, C.banks, id, {
         id,
         name: bank.name,
         name_normalized: bank.name.toLowerCase(),
@@ -74,7 +85,8 @@ export async function seedBanks() {
         created_at: now,
         updated_at: now,
       });
-      txn.set(db().collection(C.refs).doc(key), { key, ownerId: String(id) });
+      bumpCounter(txn, C.banks, id);
+      claimUnique(txn, key, id);
       return true;
     });
     if (created) added += 1;

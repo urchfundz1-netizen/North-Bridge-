@@ -32,7 +32,7 @@ router.get(
   validateQuery(bankListSchema),
   asyncHandler(async (req, res) => {
     const { includeInactive, transferType, search } = req.validatedQuery;
-    const banks = listBanks({ includeInactive, transferType, search });
+    const banks = await listBanks({ includeInactive, transferType, search });
     res.json({ banks: banks.map(toBank), total: banks.length });
   }),
 );
@@ -53,7 +53,7 @@ router.post(
   requireSuperadmin,
   validateBody(bankSchema),
   asyncHandler(async (req, res) => {
-    const bank = createBank(req.body, req.auth.actor, req);
+    const bank = await createBank(req.body, req.auth.actor, req);
     res.status(201).json({ bank: toBank(bank), message: `${bank.name} added to the bank catalogue.` });
   }),
 );
@@ -64,7 +64,7 @@ router.patch(
   requireSuperadmin,
   validateBody(bankSchema.partial()),
   asyncHandler(async (req, res) => {
-    const bank = updateBank(Number(req.params.id), req.body, req.auth.actor, req);
+    const bank = await updateBank(Number(req.params.id), req.body, req.auth.actor, req);
     res.json({ bank: toBank(bank), message: `${bank.name} updated.` });
   }),
 );
@@ -79,7 +79,7 @@ router.post(
   requireSuperadmin,
   validateBody(bankSchema.pick({ reason: true })),
   asyncHandler(async (req, res) => {
-    const bank = deactivateBank(Number(req.params.id), req.auth.actor, req.body.reason, req);
+    const bank = await deactivateBank(Number(req.params.id), req.auth.actor, req.body.reason, req);
     res.json({ bank: toBank(bank), message: `${bank.name} is no longer available for new transfers.` });
   }),
 );

@@ -58,10 +58,11 @@ router.post(
   validateBody(transferQuoteSchema),
   asyncHandler(async (req, res) => {
     const customer = findCustomerById(req.auth.actorId);
-    const prepared = prepareTransfer(req.body, {
+    const balance = await getBalance(customer.id);
+    const prepared = await prepareTransfer(req.body, {
       customerId: customer.id,
       customerStatus: customer.status,
-      isBalanceSufficient: (total) => getBalance(customer.id) >= total,
+      isBalanceSufficient: (total) => balance >= total,
     });
 
     res.json({
@@ -73,8 +74,8 @@ router.post(
         totalDebitCents: prepared.totalDebitCents,
         totalDebitFormatted: formatCents(prepared.totalDebitCents),
         requiresApproval: prepared.requiresApproval,
-        balanceCents: getBalance(customer.id),
-        balanceFormatted: formatCents(getBalance(customer.id)),
+        balanceCents: balance,
+        balanceFormatted: formatCents(balance),
         bank: toBank(findBankById(prepared.recipientBankId)),
       },
     });
@@ -109,10 +110,11 @@ router.post(
       throw forbidden(pinResult.message);
     }
 
-    const prepared = prepareTransfer(req.body, {
+    const balance = await getBalance(customer.id);
+    const prepared = await prepareTransfer(req.body, {
       customerId: customer.id,
       customerStatus: customer.status,
-      isBalanceSufficient: (total) => getBalance(customer.id) >= total,
+      isBalanceSufficient: (total) => balance >= total,
     });
 
     // Business rule: only an active account may move money.
@@ -125,7 +127,7 @@ router.post(
       throw forbidden(messages[customer.status] ?? 'This account cannot make transfers.');
     }
 
-    const { transfer, created, settledNow } = createTransfer({
+    const { transfer, created, settledNow } = await createTransfer({
       customer,
       prepared,
       idempotencyKey: req.body.idempotencyKey,
@@ -137,7 +139,7 @@ router.post(
     // The receipt comes straight back with the transfer so the customer sees
     // their numbered document immediately, without a second round trip that
     // could fail and leave them staring at an empty confirmation screen.
-    const receipt = receiptForCustomerTransfer(transfer.id, customer.id);
+    const receipt = await receiptForCustomerTransfer(transfer.id, customer.id);
 
     res.status(created ? 201 : 200).json({
       transfer: toTransfer(transfer),
@@ -169,7 +171,7 @@ router.get(
   validateQuery(transferListSchema),
   asyncHandler(async (req, res) => {
     const { limit, offset, status, search } = req.validatedQuery;
-    const { rows, total } = listCustomerTransfers(req.auth.actorId, {
+    const { rows, total } = await listCustomerTransfers(req.auth.actorId, {
       limit,
       offset,
       status,
@@ -185,7 +187,7 @@ router.get(
   validateQuery(transferListSchema),
   asyncHandler(async (req, res) => {
     const { limit, offset } = req.validatedQuery;
-    const { rows, total } = listCustomerReceipts(req.auth.actorId, { limit, offset });
+    const { rows, total } = await listCustomerReceipts(req.auth.actorId, { limit, offset });
     res.json(paginated(rows, total, { limit, offset }));
   }),
 );
@@ -193,7 +195,7 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const transfer = findTransferForCustomer(Number(req.params.id), req.auth.actorId);
+    const transfer = await findTransferForCustomer(Number(req.params.id), req.auth.actorId);
     if (!transfer) throw notFound('Transfer not found.');
     res.json({ transfer: toTransfer(transfer) });
   }),
@@ -211,9 +213,9 @@ router.get(
   '/:id/receipt',
   asyncHandler(async (req, res) => {
     const transferId = Number(req.params.id);
-    const receipt = receiptForCustomerTransfer(transferId, req.auth.actorId);
+    const receipt = await receiptForCustomerTransfer(transferId, req.auth.actorId);
     if (!receipt) {
-      const transfer = findTransferForCustomer(transferId, req.auth.actorId);
+      const transfer = await findTransferForCustomer(transferId, req.auth.actorId);
       if (!transfer) throw notFound('Transfer not found.');
       throw conflict('No receipt has been issued for this transfer.');
     }
@@ -227,7 +229,7 @@ router.post(
   requireCsrf,
   asyncHandler(async (req, res) => {
     const customer = findCustomerById(req.auth.actorId);
-    const { transfer } = cancelTransfer({ transferId: Number(req.params.id), customer, request: req });
+    const { transfer } = await cancelTransfer({ transferId: Number(req.params.id), customer, request: req });
     res.json({
       transfer: toTransfer(transfer),
       message: `Transfer ${transfer.reference_number} has been cancelled.`,

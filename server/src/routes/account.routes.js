@@ -7,9 +7,6 @@
  */
 
 import { Router } from 'express';
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
 import multer from 'multer';
 
 import { attachAuth, requireCustomer, requireCsrf, requireUsableAccount } from '../middleware/auth.js';
@@ -24,22 +21,20 @@ import { listBanks, findBankById } from '../services/bank-service.js';
 import { listCustomerTransfers } from '../services/transfer-service.js';
 import { listCustomerReceipts } from '../services/receipt-service.js';
 import { recordAudit, AUDIT_ACTIONS } from '../services/audit.js';
-import { mirrorCustomerById } from '../services/firestore.js';
-import { run, nowIso } from '../db/connection.js';
+import { setById, C, nowIso } from '../db/firestore.js';
+import { uploadAvatar, deleteAvatarByUrl } from '../core/storage.js';
 import { config } from '../core/config.js';
 import { badRequest, notFound } from '../core/errors.js';
 
 const router = Router();
 
-const AVATAR_DIR = path.join(config.uploadsDir, 'avatars');
-
 /**
  * Avatar uploads.
  *
- * Multer buffers the file in memory and it is written only after both the
- * declared MIME type and the final extension have been checked, so a renamed
- * `.svg`/`.exe` cannot get script execution from a user-supplied path. The
- * stored filename is generated server-side and never derived from user input.
+ * Multer buffers the file in memory; the bytes are handed to Cloud Storage
+ * only after the declared MIME type has been checked, so a renamed
+ * `.svg`/`.exe` cannot get script execution. The stored object name is
+ * generated server-side and never derived from user input.
  */
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/jpeg', '.jpg'],
@@ -82,7 +77,7 @@ router.patch(
   requireUsableAccount,
   validateBody(updateProfileSchema),
   asyncHandler(async (req, res) => {
-    const updated = updateOwnProfile(req.auth.actorId, req.body, req);
+    const updated = await updateOwnProfile(req.auth.actorId, req.body, req);
     res.json({ customer: toCustomerSelf(updated), message: 'Your profile has been updated.' });
   }),
 );
@@ -96,28 +91,19 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!req.file) throw badRequest('Select an image to upload.');
 
-    const extension = ALLOWED_IMAGE_TYPES.get(req.file.mimetype);
-    const filename = `customer-${req.auth.actorId}-${randomBytes(8).toString('hex')}${extension}`;
+    const { url: profilePicture } = await uploadAvatar(req.file.buffer, req.file.mimetype);
 
-    await fs.mkdir(AVATAR_DIR, { recursive: true });
-    await fs.writeFile(path.join(AVATAR_DIR, filename), req.file.buffer);
+    // Best-effort cleanup of the superseded image (cosmetic, never fatal).
+    await deleteAvatarByUrl(req.auth.actor.profile_picture);
 
-    // Best-effort cleanup of the superseded image. Failure is deliberately
-    // ignored: a stale avatar is cosmetic and must not fail the upload.
-    const previous = req.auth.actor.profile_picture;
-    if (previous && path.basename(previous) === previous) {
-      fs.unlink(path.join(AVATAR_DIR, previous)).catch(() => {});
-    }
-
-    const profilePicture = `/uploads/avatars/${filename}`;
-    run('UPDATE customers SET profile_picture = ?, updated_at = ? WHERE id = ?', [
-      profilePicture,
-      nowIso(),
+    await setById(
+      C.customers,
       req.auth.actorId,
-    ]);
-    mirrorCustomerById(req.auth.actorId);
+      { profile_picture: profilePicture, updated_at: nowIso() },
+      { merge: true },
+    );
 
-    recordAudit({
+    await recordAudit({
       actorType: 'customer',
       actorId: req.auth.actorId,
       actorEmail: req.auth.actor.email,
@@ -142,15 +128,16 @@ router.get(
   asyncHandler(async (req, res) => {
     const customerId = req.auth.actorId;
 
-    const { rows: recent } = listEntries(customerId, { limit: 5 });
-    const pending = listCustomerTransfers(customerId, { status: 'pending', limit: 5 });
-    const receipts = listCustomerReceipts(customerId, { limit: 1 });
+    const { rows: recent } = await listEntries(customerId, { limit: 5 });
+    const pending = await listCustomerTransfers(customerId, { status: 'pending', limit: 5 });
+    const receipts = await listCustomerReceipts(customerId, { limit: 1 });
+    const statement = await summarise(customerId);
 
     res.json({
       customer: toCustomerSelf(findCustomerById(customerId)),
       recentTransactions: recent.map(toLedgerEntry),
       pendingTransfers: { total: pending.total, rows: pending.rows },
-      statement: summarise(customerId),
+      statement,
       receiptCount: receipts.total,
       rules: bankingRules(),
     });
@@ -163,7 +150,7 @@ router.get(
   validateQuery(ledgerListSchema),
   asyncHandler(async (req, res) => {
     const { limit, offset, entryType } = req.validatedQuery;
-    const { rows, total } = listEntries(req.auth.actorId, {
+    const { rows, total } = await listEntries(req.auth.actorId, {
       limit,
       offset,
       entryType: entryType === 'all' ? null : entryType,
@@ -185,7 +172,7 @@ router.get(
       : null;
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : null;
 
-    const banks = listBanks({ includeInactive: false, transferType, search }).map((bank) => ({
+    const banks = (await listBanks({ includeInactive: false, transferType, search })).map((bank) => ({
       id: bank.id,
       name: bank.name,
       code: bank.code,

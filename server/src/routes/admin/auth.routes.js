@@ -9,7 +9,7 @@
  */
 
 import { Router } from 'express';
-import { one, run, nowIso } from '../../db/connection.js';
+import { coll, C, coerceId, getById, setById, nowIso } from '../../db/firestore.js';
 import { verifySecret, needsRehash, hashSecret } from '../../core/crypto.js';
 import { validateBody } from '../../middleware/validate.js';
 import { throttle, clearThrottle, recordThrottleFailure } from '../../middleware/throttle.js';
@@ -59,22 +59,22 @@ router.post(
   validateBody(adminLoginSchema),
   asyncHandler(async (req, res) => {
     const email = String(req.body.email).toLowerCase();
-    const admin = one('SELECT * FROM admins WHERE email = ?', [email]);
+    const admin = await findAdminByEmail(email);
 
     if (!admin) {
       await verifySecret(String(req.body.password), DUMMY_HASH);
-      recordFailure(req, email, null);
+      await recordFailure(req, email, null);
       throw unauthorized(FAILURE_MESSAGES.invalid_credentials);
     }
 
     const valid = await verifySecret(String(req.body.password), admin.password_hash);
     if (!valid) {
-      const { lockedUntil } = recordFailure(req, email, admin);
+      const { lockedUntil } = await recordFailure(req, email, admin);
       throw unauthorized(lockedUntil ? FAILURE_MESSAGES.locked : FAILURE_MESSAGES.invalid_credentials);
     }
 
     if (admin.status !== 'active') {
-      recordAudit({
+      await recordAudit({
         actorType: 'admin',
         actorId: admin.id,
         actorEmail: admin.email,
@@ -93,23 +93,25 @@ router.post(
 
     // Rotate the session on sign-in to prevent session fixation.
     const previous = req.cookies?.[cookieNameFor('admin')];
-    if (previous) revokeSession(previous, 'admin');
+    if (previous) await revokeSession(previous, 'admin');
 
-    run(
-      'UPDATE admins SET last_login_at = ?, failed_attempts = 0, locked_until = NULL WHERE id = ?',
-      [nowIso(), admin.id],
+    await setById(
+      C.admins,
+      admin.id,
+      { last_login_at: nowIso(), failed_attempts: 0, locked_until: null },
+      { merge: true },
     );
 
     // Upgrade hashes stored under older cost parameters.
     if (needsRehash(admin.password_hash)) {
       const upgraded = await hashSecret(req.body.password);
-      run('UPDATE admins SET password_hash = ? WHERE id = ?', [upgraded, admin.id]);
+      await setById(C.admins, admin.id, { password_hash: upgraded }, { merge: true });
     }
 
-    const { token, csrfToken, expiresAt } = createSession('admin', admin.id, req);
+    const { token, csrfToken, expiresAt } = await createSession('admin', admin.id, req);
     setSessionCookie(res, 'admin', token, expiresAt);
 
-    recordAudit({
+    await recordAudit({
       actorType: 'admin',
       actorId: admin.id,
       actorEmail: admin.email,
@@ -130,10 +132,10 @@ router.post(
   requireCsrf,
   asyncHandler(async (req, res) => {
     const token = req.cookies?.[cookieNameFor('admin')];
-    if (token) revokeSession(token, 'admin');
+    if (token) await revokeSession(token, 'admin');
     clearSessionCookie(res, 'admin');
 
-    recordAudit({
+    await recordAudit({
       actorType: 'admin',
       actorId: req.auth.actorId,
       actorEmail: req.auth.actor.email,
@@ -169,20 +171,21 @@ router.post(
   requireAdmin,
   validateBody(changePasswordSchema),
   asyncHandler(async (req, res) => {
-    const admin = one('SELECT * FROM admins WHERE id = ?', [req.auth.actorId]);
+    const admin = await getById(C.admins, req.auth.actorId);
 
     const valid = await verifySecret(String(req.body.currentPassword), admin.password_hash);
     if (!valid) {
       throw validationFailed({ currentPassword: 'Your current password is incorrect.' });
     }
 
-    run('UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?', [
-      await hashSecret(req.body.newPassword),
-      nowIso(),
+    await setById(
+      C.admins,
       admin.id,
-    ]);
+      { password_hash: await hashSecret(req.body.newPassword), updated_at: nowIso() },
+      { merge: true },
+    );
 
-    recordAudit({
+    await recordAudit({
       actorType: 'admin',
       actorId: admin.id,
       actorEmail: admin.email,
@@ -199,14 +202,22 @@ router.post(
 
 /* -------------------------------------------------------------------------- */
 
+/** Look up an administrator by (lower-cased) email address. */
+async function findAdminByEmail(email) {
+  const snap = await coll(C.admins).where('email', '==', email).limit(1).get();
+  if (snap.empty) return null;
+  const doc = snap.docs[0];
+  return { id: coerceId(doc.id), ...doc.data() };
+}
+
 /**
  * Increment the persistent failure counter, locking the account once the limit
  * is reached. The in-memory IP throttle still applies on top of this.
  */
-function recordFailure(req, email, admin) {
+async function recordFailure(req, email, admin) {
   recordThrottleFailure(req, { limit: LOGIN_LIMIT, windowMs: LOGIN_WINDOW_MS, blockMs: 30 * 60_000 });
 
-  recordAudit({
+  await recordAudit({
     actorType: 'admin',
     actorEmail: email,
     action: AUDIT_ACTIONS.ADMIN_LOGIN_FAILED,
@@ -220,12 +231,12 @@ function recordFailure(req, email, admin) {
   const shouldLock = attempts >= LOGIN_LIMIT;
   const lockedUntil = shouldLock ? new Date(Date.now() + LOCKOUT_MINUTES * 60_000).toISOString() : null;
 
-  run('UPDATE admins SET failed_attempts = ?, locked_until = ?, updated_at = ? WHERE id = ?', [
-    attempts,
-    lockedUntil,
-    nowIso(),
+  await setById(
+    C.admins,
     admin.id,
-  ]);
+    { failed_attempts: attempts, locked_until: lockedUntil, updated_at: nowIso() },
+    { merge: true },
+  );
 
   return { lockedUntil };
 }

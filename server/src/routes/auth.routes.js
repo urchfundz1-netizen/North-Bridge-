@@ -63,7 +63,7 @@ router.post(
 
     // Sign the new customer straight in: registration is itself proof of
     // identity, so there is no reason to make them type the password again.
-    const { token, csrfToken, expiresAt } = createSession('customer', customer.id, req);
+    const { token, csrfToken, expiresAt } = await createSession('customer', customer.id, req);
     setSessionCookie(res, 'customer', token, expiresAt);
 
     res.status(201).json({
@@ -92,7 +92,7 @@ router.post(
 
     if (!result.ok) {
       recordThrottleFailure(req, { limit: LOGIN_LIMIT, windowMs: LOGIN_WINDOW_MS, blockMs: 30 * 60_000 });
-      recordAudit({
+      await recordAudit({
         actorType: 'customer',
         actorEmail: req.body.email,
         action: AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED,
@@ -108,12 +108,12 @@ router.post(
     // Replace any pre-existing session so a fixated cookie cannot survive a
     // fresh sign-in.
     const previous = req.cookies?.[cookieNameFor('customer')];
-    if (previous) revokeSession(previous, 'customer');
+    if (previous) await revokeSession(previous, 'customer');
 
-    const { token, csrfToken, expiresAt } = createSession('customer', result.customer.id, req);
+    const { token, csrfToken, expiresAt } = await createSession('customer', result.customer.id, req);
     setSessionCookie(res, 'customer', token, expiresAt);
 
-    recordAudit({
+    await recordAudit({
       actorType: 'customer',
       actorId: result.customer.id,
       actorEmail: result.customer.email,
@@ -139,11 +139,11 @@ router.post(
   requireCsrf,
   asyncHandler(async (req, res) => {
     const token = req.cookies?.[cookieNameFor('customer')];
-    if (token) revokeSession(token, 'customer');
+    if (token) await revokeSession(token, 'customer');
     clearSessionCookie(res, 'customer');
 
     if (req.auth) {
-      recordAudit({
+      await recordAudit({
         actorType: 'customer',
         actorId: req.auth.actorId,
         actorEmail: req.auth.actor.email,

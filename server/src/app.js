@@ -150,22 +150,10 @@ export function createApp({ serveClient = true } = {}) {
   /* Static assets                                                    */
   /* ---------------------------------------------------------------- */
 
-  // Uploaded avatars. Served read-only; filenames are server-generated and
-  // carry no extension-derived execution path beyond the allowlisted set.
-  fs.mkdirSync(path.join(config.uploadsDir, 'avatars'), { recursive: true });
-  app.use(
-    '/uploads',
-    express.static(path.join(config.uploadsDir), {
-      index: false,
-      dotfiles: 'deny',
-      maxAge: '7d',
-      setHeaders: (res) => {
-        // Avatars are user content: never let a browser sniff or execute them.
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Content-Disposition', 'inline');
-      },
-    }),
-  );
+  // Avatars are served from Firebase Storage via their download URLs;
+  // no local disk `/uploads` static mount is needed on the serverless
+  // Cloud Functions path (and the local disk is read-only in the cloud).
+  // Keep client asset serving behaviour unchanged for production.
 
   // In production the API also serves the built React app, so the whole
   // platform runs from a single origin (and therefore a single cookie scope).

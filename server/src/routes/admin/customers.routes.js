@@ -8,9 +8,6 @@
  */
 
 import { Router } from 'express';
-import path from 'node:path';
-import fs from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -39,15 +36,13 @@ import {
 } from '../../services/customer-service.js';
 import { listEntries, summarise } from '../../services/ledger-service.js';
 import { recordAudit, AUDIT_ACTIONS } from '../../services/audit.js';
-import { mirrorCustomerById } from '../../services/firestore.js';
-import { run, nowIso } from '../../db/connection.js';
+import { setById, C, nowIso } from '../../db/firestore.js';
+import { uploadAvatar, deleteAvatarByUrl } from '../../core/storage.js';
 import { config } from '../../core/config.js';
 import { badRequest, notFound } from '../../core/errors.js';
 import { parseAmountToCents } from '../../core/money.js';
 
 const router = Router();
-
-const AVATAR_DIR = path.join(config.uploadsDir, 'avatars');
 
 const ALLOWED_IMAGE_TYPES = new Map([
   ['image/jpeg', '.jpg'],
@@ -84,7 +79,7 @@ router.get(
   validateQuery(customerListSchema),
   asyncHandler(async (req, res) => {
     const { limit, offset, status, accountType, search } = req.validatedQuery;
-    const { rows, total } = listCustomers({ limit, offset, status, accountType, search });
+    const { rows, total } = await listCustomers({ limit, offset, status, accountType, search });
     res.json(paginated(rows.map(toCustomerAdmin), total, { limit, offset }));
   }),
 );
@@ -95,7 +90,7 @@ router.get(
   validateQuery(lookupSchema),
   asyncHandler(async (req, res) => {
     const { accountNumber } = req.validatedQuery;
-    const found = listCustomers({ search: accountNumber, limit: 10 });
+    const found = await listCustomers({ search: accountNumber, limit: 10 });
     res.json({ matches: found.rows.map(toCustomerAdmin) });
   }),
 );
@@ -107,7 +102,7 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const detail = customerDetail(Number(req.params.id));
+    const detail = await customerDetail(Number(req.params.id));
     if (!detail) throw notFound('Customer not found.');
 
     const customer = detail.customer;
@@ -148,13 +143,13 @@ router.get(
     if (!findCustomerById(id)) throw notFound('Customer not found.');
 
     const { limit, offset, entryType } = req.validatedQuery;
-    const { rows, total } = listEntries(id, {
+    const { rows, total } = await listEntries(id, {
       limit,
       offset,
       entryType: entryType === 'all' ? null : entryType,
     });
 
-    res.json({ ...paginated(rows.map(toLedgerEntry), total, { limit, offset }), summary: summarise(id) });
+    res.json({ ...paginated(rows.map(toLedgerEntry), total, { limit, offset }), summary: await summarise(id) });
   }),
 );
 
@@ -186,7 +181,7 @@ router.patch(
   requireCsrf,
   validateBody(adminUpdateCustomerSchema),
   asyncHandler(async (req, res) => {
-    const updated = adminUpdateCustomer(Number(req.params.id), req.body, req.auth.actor, req);
+    const updated = await adminUpdateCustomer(Number(req.params.id), req.body, req.auth.actor, req);
     res.json({ customer: toCustomerAdmin(updated), message: 'Customer details updated.' });
   }),
 );
@@ -200,7 +195,7 @@ router.post(
   requireCsrf,
   validateBody(changeStatusSchema),
   asyncHandler(async (req, res) => {
-    const updated = changeAccountStatus({
+    const updated = await changeAccountStatus({
       customerId: Number(req.params.id),
       status: req.body.status,
       reason: req.body.reason,
@@ -226,26 +221,13 @@ router.post(
     if (!customer) throw notFound('Customer not found.');
     if (!req.file) throw badRequest('Select an image to upload.');
 
-    const extension = ALLOWED_IMAGE_TYPES.get(req.file.mimetype);
-    const filename = `customer-${id}-${randomBytes(8).toString('hex')}${extension}`;
+    const { url: profilePicture } = await uploadAvatar(req.file.buffer, req.file.mimetype);
 
-    await fs.mkdir(AVATAR_DIR, { recursive: true });
-    await fs.writeFile(path.join(AVATAR_DIR, filename), req.file.buffer);
+    await deleteAvatarByUrl(customer.profile_picture);
 
-    const previous = customer.profile_picture;
-    if (previous && path.basename(previous) === previous) {
-      fs.unlink(path.join(AVATAR_DIR, previous)).catch(() => {});
-    }
+    await setById(C.customers, id, { profile_picture: profilePicture, updated_at: nowIso() }, { merge: true });
 
-    const profilePicture = `/uploads/avatars/${filename}`;
-    run('UPDATE customers SET profile_picture = ?, updated_at = ? WHERE id = ?', [
-      profilePicture,
-      nowIso(),
-      id,
-    ]);
-    mirrorCustomerById(id);
-
-    recordAudit({
+    await recordAudit({
       actorType: 'admin',
       actorId: req.auth.actor.id,
       actorEmail: req.auth.actor.email,
@@ -273,7 +255,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const amountCents = parseAmountToCents(req.body.amount);
 
-    const result = fundAccount({
+    const result = await fundAccount({
       customerId: Number(req.params.id),
       amountCents,
       description: req.body.description,
@@ -308,7 +290,7 @@ router.post(
     const amountCents = parseAmountToCents(signed.replace(/^[+-]/, ''));
     const delta = negative ? -amountCents : amountCents;
 
-    const result = adjustBalance({
+    const result = await adjustBalance({
       customerId: Number(req.params.id),
       amountCents: delta,
       reason: req.body.reason,

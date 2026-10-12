@@ -37,7 +37,7 @@ router.use(attachAuth('admin'), requireAdmin);
 router.get(
   '/stats',
   asyncHandler(async (_req, res) => {
-    res.json({ stats: transferStats() });
+    res.json({ stats: await transferStats() });
   }),
 );
 
@@ -47,7 +47,7 @@ router.get(
   validateQuery(transferListSchema),
   asyncHandler(async (req, res) => {
     const { limit, offset, status, search } = req.validatedQuery;
-    const { rows, total } = listTransfers({ limit, offset, status, search });
+    const { rows, total } = await listTransfers({ limit, offset, status, search });
     res.json(paginated(rows.map((row) => toTransfer(row, { includeCustomer: true })), total, { limit, offset }));
   }),
 );
@@ -56,11 +56,11 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const transfer = findTransferById(Number(req.params.id));
+    const transfer = await findTransferById(Number(req.params.id));
     if (!transfer) throw notFound('Transfer not found.');
     res.json({
       transfer: toTransfer(transfer, { includeCustomer: true }),
-      receipt: receiptForTransfer(transfer.id),
+      receipt: await receiptForTransfer(transfer.id),
     });
   }),
 );
@@ -80,7 +80,7 @@ router.post(
   requireCsrf,
   validateBody(reviewTransferSchema),
   asyncHandler(async (req, res) => {
-    const result = approveTransfer({
+    const result = await approveTransfer({
       transferId: Number(req.params.id),
       admin: req.auth.actor,
       note: req.body.note,
@@ -89,7 +89,7 @@ router.post(
 
     res.json({
       transfer: toTransfer(result.transfer, { includeCustomer: true }),
-      receipt: result.receipt ?? receiptForTransfer(result.transfer.id),
+      receipt: result.receipt ?? (await receiptForTransfer(result.transfer.id)),
       alreadyProcessed: result.alreadyApproved,
       message: result.alreadyApproved
         ? `Transfer ${result.transfer.reference_number} was already approved. No further funds were moved.`
@@ -104,7 +104,7 @@ router.post(
   requireCsrf,
   validateBody(reviewTransferSchema),
   asyncHandler(async (req, res) => {
-    const result = rejectTransfer({
+    const result = await rejectTransfer({
       transferId: Number(req.params.id),
       admin: req.auth.actor,
       reason: req.body.reason,
@@ -125,10 +125,10 @@ router.post(
 router.get(
   '/:id/receipt',
   asyncHandler(async (req, res) => {
-    const transfer = findTransferById(Number(req.params.id));
+    const transfer = await findTransferById(Number(req.params.id));
     if (!transfer) throw notFound('Transfer not found.');
 
-    const receipt = receiptForTransfer(transfer.id);
+    const receipt = await receiptForTransfer(transfer.id);
     if (!receipt) {
       res.status(409).json({
         error: {

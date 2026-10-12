@@ -8,14 +8,21 @@
  *   npm run seed:admin
  */
 
-import { getDb, one, run, nowIso, closeDb, transaction } from './connection.js';
+import { coll, C, coerceId, getById, setById, nowIso, initFirestore } from './firestore.js';
 import { migrate } from './migrate.js';
 import { hashSecret } from '../core/crypto.js';
 import { config } from '../core/config.js';
 import { isEntryPoint } from '../core/is-entry-point.js';
 import { reportFailure } from './report-failure.js';
 import { recordAudit, AUDIT_ACTIONS } from '../services/audit.js';
-import { mirrorAdminById } from '../services/firestore.js';
+import { transaction } from './firestore.js';
+
+async function findAdminByEmail(email) {
+  const snap = await coll(C.admins).where('email', '==', email).limit(1).get();
+  if (snap.empty) return null;
+  const doc = snap.docs[0];
+  return { id: coerceId(doc.id), ...doc.data() };
+}
 
 export async function seedAdmin({ email, password, fullName } = {}) {
   const adminEmail = (email ?? config.admin.email ?? '').trim().toLowerCase();
@@ -33,43 +40,61 @@ export async function seedAdmin({ email, password, fullName } = {}) {
   }
 
   const passwordHash = await hashSecret(adminPassword);
-  getDb();
+  initFirestore();
 
-  const result = transaction(() => {
-    const existing = one('SELECT id, email FROM admins WHERE email = ?', [adminEmail]);
-
-    if (existing) {
-      run(
-        `UPDATE admins SET password_hash = ?, full_name = ?, role = 'superadmin',
-                          status = 'active', failed_attempts = 0, locked_until = NULL, updated_at = ?
-          WHERE id = ?`,
-        [passwordHash, name, nowIso(), existing.id],
+  const result = await transaction(async (txn) => {
+    const existingSnap = await txn.get(coll(C.admins).where('email', '==', adminEmail).limit(1));
+    if (!existingSnap.empty) {
+      const existing = existingSnap.docs[0];
+      const existingId = coerceId(existing.id);
+      await setById(
+        C.admins,
+        existingId,
+        {
+          password_hash: passwordHash,
+          full_name: name,
+          role: 'superadmin',
+          status: 'active',
+          failed_attempts: 0,
+          locked_until: null,
+          updated_at: nowIso(),
+        },
+        { merge: true },
       );
-      return { created: false, admin: one('SELECT id, email, full_name, role FROM admins WHERE id = ?', [existing.id]) };
+      const admin = await getById(C.admins, existingId);
+      return { created: false, admin };
     }
 
-    const inserted = run(
-      `INSERT INTO admins (email, full_name, password_hash, role)
-       VALUES (?, ?, ?, 'superadmin')`,
-      [adminEmail, name, passwordHash],
-    );
-
-    const admin = one('SELECT id, email, full_name, role FROM admins WHERE id = ?', [
-      Number(inserted.lastInsertRowid),
-    ]);
+    const idSnap = await txn.get(coll(C.counters).doc(C.admins));
+    const nextId = Number(idSnap.exists ? idSnap.data().value : 0) + 1;
+    txn.set(coll(C.counters).doc(C.admins), { value: nextId }, { merge: true });
+    const now = nowIso();
+    txn.set(coll(C.admins).doc(String(nextId)), {
+      id: nextId,
+      email: adminEmail,
+      full_name: name,
+      password_hash: passwordHash,
+      role: 'superadmin',
+      status: 'active',
+      failed_attempts: 0,
+      locked_until: null,
+      last_login_at: null,
+      created_at: now,
+      updated_at: now,
+    });
+    const admin = await getById(C.admins, nextId);
     return { created: true, admin };
   });
 
-  mirrorAdminById(result.admin.id);
   return result;
 }
 
 if (isEntryPoint(import.meta.url)) {
   try {
-    migrate({ silent: true });
+    await migrate({ silent: true });
     const result = await seedAdmin();
 
-    recordAudit({
+    await recordAudit({
       actorType: 'system',
       actorEmail: result.admin.email,
       action: result.created ? AUDIT_ACTIONS.ADMIN_CREATED : AUDIT_ACTIONS.ADMIN_PASSWORD_ROTATED,
@@ -84,7 +109,6 @@ if (isEntryPoint(import.meta.url)) {
     console.log(`  name:  ${result.admin.full_name}`);
     console.log(`  role:  ${result.admin.role}`);
     console.log('\nSign in at /admin/login');
-    closeDb();
   } catch (error) {
     reportFailure('seed:admin', error);
     process.exitCode = 1;
