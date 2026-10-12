@@ -1,6 +1,3 @@
-# These are consumed on Linux (Docker build / Caddy), where CRLF breaks
-# Dockerfile line continuations and shell scripts. Force LF regardless of the
-# host's core.autocrlf setting.
-Dockerfile text eol=lf
-Caddyfile text eol=lf
+# These are consumed on Linux (shell scripts), where CRLF breaks line
+# continuations. Force LF regardless of the host's core.autocrlf setting.
 *.sh text eol=lf

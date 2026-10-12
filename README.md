@@ -72,9 +72,8 @@ client/
   src/api/         fetch wrapper with cookie + CSRF handling
 scripts/           smoke test, SVG checker
 firestore.rules    Firestore security rules for the optional mirror
-Dockerfile         multi-stage image (build SPA, then run the server)
-docker-compose.yml app + Caddy stack with a persistent data volume
-Caddyfile          reverse proxy + automatic TLS
+deploy/            systemd unit for running the app as a service on a VPS
+.env.production.example  production env template (copy to .env on the server)
 ```
 
 ## Environment
@@ -86,70 +85,102 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 - `TRANSFER_FEE_CENTS`, `MIN_TRANSFER_CENTS`, `MAX_TRANSFER_CENTS` — fee and guard rails.
 - `FIREBASE_ENABLED=0` (default) turns the Firestore mirror off entirely; SQLite stays the source of truth.
 
-## Deploying (Docker + Oracle Cloud Always Free)
+## Deploying
 
-The app is a single Node process that serves the API and the built SPA from one origin, so it deploys as one container. `docker-compose.yml` runs it behind Caddy, which terminates TLS and reverse-proxies to the app. SQLite and avatar uploads live on a named volume, so they survive redeploys and reboots.
+The app is a single Node process that serves the API and the built SPA from one origin, and the database is a plain SQLite file (no separate database server). There is **no Docker and no Tailscale** in this path — a deployment is just Node on a host, a domain pointed at it, and something that terminates HTTPS.
 
-**Why Oracle Cloud**: the *Always Free* tier includes a VM and persistent storage with no time limit, which is the only way to get a free persistent disk for a stateful Node app in 2026. It needs a card for identity verification, but the free resources are never charged. (Render's free instance has no disk, and Fly.io and Koyeb no longer offer free persistent volumes.)
+### 1. Run it on your own machine (now)
 
-### 1. Create the VM
+Two ways:
 
-1. Sign up at [cloud.oracle.com](https://cloud.oracle.com) and open **Compute → Instances → Create instance**.
-2. Image: **Ubuntu 24.04**. Shape: **Ampere A1.Flex** (2 OCPU / 12 GB) is within the Always Free allowance; the **E2.1.Micro** (1 GB) also works but is tight for the client build — add swap if you use it.
-3. Under **Networking**, ensure the subnet allows ingress on TCP **80** and **443** (add rules to the VCN Security List if needed).
-4. Add your SSH key and create the instance.
+- **Dev mode** (hot reload) — the Quick start above: `npm run dev`, browse to `http://localhost:5173` (customer + `/admin`). API on `:4000`.
+- **Production-like, single origin** — the server serves the built SPA *and* the API on one port, the same way a VPS will run it. In `.env` set:
 
-### 2. Prepare the VM
+  ```ini
+  NODE_ENV=production
+  CLIENT_ORIGIN=http://localhost:4000
+  ALLOW_LOOPBACK_ORIGIN=1   # overrides the "loopback in production" guard deliberately
+  SESSION_SECRET=<a real secret, not the example>
+  ```
+
+  then:
+
+  ```bash
+  npm run build
+  npm start        # http://localhost:4000 serves the SPA + API together
+  ```
+
+  The server listens on every interface, so other devices on your LAN can open `http://<your-lan-ip>:4000`. Drop `ALLOW_LOOPBACK_ORIGIN` before any real deployment.
+
+### 2. Move it to a VPS with your domain (when you're ready)
+
+The same single process, kept alive by systemd.
+
+**1. Point your domain at the server.** In your DNS panel, create an `A` record, e.g. `bank` → `<VPS public IP>`. It must resolve before you add HTTPS.
+
+**2. Install Node 22.5+** (Ubuntu):
 
 ```bash
-# On the instance (SSH in as the default user)
-sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2
-sudo usermod -aG docker "$USER"   # log out and back in for this to apply
-
-# Open the OS firewall (Ubuntu images ship an iptables ruleset that drops 80/443)
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo netfilter-persistent save
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
 ```
 
-### 3. Configure and start
+**3. Clone and build the app** at `/opt/northbridge-bank`:
 
 ```bash
-git clone https://github.com/urchfundz1-netizen/North-Bridge-.git
-cd North-Bridge-
+sudo useradd --system --home /opt/northbridge-bank --shell /usr/sbin/nologin northbridge
+sudo mkdir -p /opt/northbridge-bank
+sudo chown northbridge:northbridge /opt/northbridge-bank
+sudo -u northbridge git clone https://github.com/urchfundz1-netizen/North-Bridge-.git /opt/northbridge-bank
+cd /opt/northbridge-bank
+sudo -u northbridge cp .env.production.example .env
+sudo -u northbridge nano .env   # set CLIENT_ORIGIN, SESSION_SECRET,
+                                # ADMIN_EMAIL, ADMIN_PASSWORD
+sudo -u northbridge npm install
+sudo -u northbridge npm run build
+sudo -u northbridge npm run migrate
+sudo -u northbridge npm run seed:admin   # one-time: create the administrator
 ```
 
-Create a `.env` in the repo root (read by both Compose and the app):
-
-```ini
-# Use a domain you control, or <public-ip>.sslip.io for TLS without owning one.
-DOMAIN=bank.example.com
-CLIENT_ORIGIN=https://bank.example.com
-
-SESSION_SECRET=<paste 48 random bytes as hex>
-ADMIN_EMAIL=admin@northbridge.bank
-ADMIN_PASSWORD=<a strong password>
-```
-
-Generate the secret with:
+Generate `SESSION_SECRET` with:
 `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
 
-Point `DOMAIN` at the instance's public IP (an `A` record), then:
+`CLIENT_ORIGIN` must equal `https://<your-domain>` exactly; `COOKIE_SECURE` is forced on automatically in production.
+
+**4. Keep it running with systemd** (`deploy/northbridge.service` already uses the `northbridge` user and `/opt/northbridge-bank` — adjust if you changed either):
 
 ```bash
-docker compose up -d --build
-docker compose exec app npm run seed:admin   # one-time: create the administrator
+sudo cp deploy/northbridge.service /etc/systemd/system/northbridge.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now northbridge
+sudo systemctl status northbridge
 ```
 
-Migrations run automatically on boot (`server/src/index.js`). Visit `https://<DOMAIN>/admin` to sign in.
+Migrations run automatically on boot; the site is now up over plain HTTP on port 4000.
 
-### Notes
+**5. Add HTTPS later.** Open TCP **80** and **443** in the cloud provider's firewall and the OS firewall, then either follow the nginx + certbot route below or use your provider's load balancer / certificate. For example, nginx:
 
-- `CLIENT_ORIGIN` must equal `https://<DOMAIN>`; the server refuses to boot in production while it is a loopback address (silent CORS failures otherwise).
-- Everything durable lives on the `northbridge-data` Docker volume mounted at `/data`: the SQLite database (`DATABASE_FILE`) and avatar uploads (`UPLOADS_DIR`). `docker compose down` keeps it; `docker compose down -v` deletes it.
-- Caddy stores its certificates in the `caddy-data` volume, so renewals survive restarts.
-- The Firestore mirror ships disabled (`FIREBASE_ENABLED=0`); enable it only after adding real Firebase credentials.
-- `render.yaml` is kept as an alternative for Render, but its config requires a paid instance (free has no disk).
+```nginx
+server {
+    listen 80;
+    server_name bank.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+    }
+}
+```
+
+then `sudo apt-get install -y nginx certbot python3-certbot-nginx` and `sudo certbot --nginx` for the certificate.
+
+### Data and backups
+
+Everything durable is two things: the SQLite file (default `server/data/northbridge.db`) and uploaded avatars (`server/uploads/`). Back up the database online-safely on a schedule with `sqlite3 northbridge.db .backup /backups/northbridge-$(date +%F).db` (`sudo apt-get install -y sqlite3`), and copy the `uploads/` directory periodically. The Firestore mirror ships disabled (`FIREBASE_ENABLED=0`); enable it only after adding real Firebase credentials.
 
 ## Security notes
 

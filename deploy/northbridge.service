@@ -1,0 +1,37 @@
+# systemd unit for Northbridge Bank on a VPS. No Docker.
+#
+# Install as root (adapt User / WorkingDirectory to your setup):
+#   sudo cp deploy/northbridge.service /etc/systemd/system/northbridge.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now northbridge
+#
+# The app reads its settings from .env in the repo root (see README). Real
+# environment variables win over the .env file, so NODE_ENV below overrides
+# the development default.
+
+[Unit]
+Description=Northbridge Bank (Node API + SPA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=northbridge
+Group=northbridge
+WorkingDirectory=/opt/northbridge-bank
+ExecStart=/usr/bin/node server/src/index.js
+Restart=on-failure
+RestartSec=3
+
+Environment=NODE_ENV=production
+
+# Data lives here: server/data/northbridge.db (SQLite) and server/uploads.
+# Move them somewhere else by setting DATABASE_FILE / UPLOADS_DIR in .env to
+# another absolute path.
+
+# Optional hardening; drop them if anything misbehaves.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
