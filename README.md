@@ -86,96 +86,44 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 
 ## Deploying
 
-The app is a single Node process that serves the API and the built SPA from one origin, backed by Firestore and Cloud Storage (no separate database server). There is **no Docker and no Tailscale** in this path — a deployment is just Node on a host, a domain pointed at it, and something that terminates HTTPS.
+Two surfaces, deployed independently:
 
-### 1. Run it on your own machine (now)
+- **Client (React SPA)** — hosted on **Vercel** via `vercel.json` (root `client`, Vite build, all routes rewritten to `index.html`).
+- **API + data** — a single Firebase Function (`server/src/firebase.js`) under `/api/*`, backed by Firestore and Cloud Storage. `firestore.rules` and `storage.rules` deny all client access; only the server (Firebase Admin SDK) reads and writes.
 
-Two ways:
+### 1. Run it locally
 
-- **Dev mode** (hot reload) — the Quick start above: `npm run dev`, browse to `http://localhost:5173` (customer + `/admin`). API on `:4000`.
-- **Production-like, single origin** — the server serves the built SPA *and* the API on one port, the same way a VPS will run it. In `.env` set:
+Dev mode (hot reload): `npm run dev` — API on `:4000`, client on `:5173`. The test suite (`npm test`) runs against the Firestore + Storage emulators and never touches a real project.
 
-  ```ini
-  NODE_ENV=production
-  CLIENT_ORIGIN=http://localhost:4000
-  ALLOW_LOOPBACK_ORIGIN=1   # overrides the "loopback in production" guard deliberately
-  SESSION_SECRET=<a real secret, not the example>
-  ```
+Production rehearsal on one origin: set `NODE_ENV=production`, `CLIENT_ORIGIN=http://localhost:4000`, `ALLOW_LOOPBACK_ORIGIN=1`, a real `SESSION_SECRET`, then `npm run build && npm start`.
 
-  then:
-
-  ```bash
-  npm run build
-  npm start        # http://localhost:4000 serves the SPA + API together
-  ```
-
-  The server listens on every interface, so other devices on your LAN can open `http://<your-lan-ip>:4000`. Drop `ALLOW_LOOPBACK_ORIGIN` before any real deployment.
-
-### 2. Move it to a VPS with your domain (when you're ready)
-
-The same single process, kept alive by systemd.
-
-**1. Point your domain at the server.** In your DNS panel, create an `A` record, e.g. `bank` → `<VPS public IP>`. It must resolve before you add HTTPS.
-
-**2. Install Node 22.5+** (Ubuntu):
+### 2. Deploy the API to Firebase
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
+firebase login
+firebase use north-bridgebank
+firebase deploy --only firestore:rules,firestore:indexes,storage:rules,functions
 ```
 
-**3. Clone and build the app** at `/opt/northbridge-bank`:
+Function environment comes from a `.env` file in `server/` on the deploy machine (Firebase uploads it; never commit it — git ignores it). Minimum values:
 
-```bash
-sudo useradd --system --home /opt/northbridge-bank --shell /usr/sbin/nologin northbridge
-sudo mkdir -p /opt/northbridge-bank
-sudo chown northbridge:northbridge /opt/northbridge-bank
-sudo -u northbridge git clone https://github.com/urchfundz1-netizen/North-Bridge-.git /opt/northbridge-bank
-cd /opt/northbridge-bank
-sudo -u northbridge cp .env.production.example .env
-sudo -u northbridge nano .env   # set CLIENT_ORIGIN, SESSION_SECRET,
-                                # ADMIN_EMAIL, ADMIN_PASSWORD
-sudo -u northbridge npm install
-sudo -u northbridge npm run build
-sudo -u northbridge npm run migrate
-sudo -u northbridge npm run seed:admin   # one-time: create the administrator
+```ini
+SESSION_SECRET=<48 random bytes as hex>
+CLIENT_ORIGIN=https://<your-vercel-app>.vercel.app
+ADMIN_EMAIL=admin@northbridge.bank
+ADMIN_PASSWORD=<a strong password>
 ```
 
-Generate `SESSION_SECRET` with:
-`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+`CLIENT_ORIGIN` must be the exact Vercel origin — CORS and cookie behaviour depend on it. The Function runs an idempotent `bootstrap()` (reference data + settings) on boot.
 
-`CLIENT_ORIGIN` must equal `https://<your-domain>` exactly; `COOKIE_SECURE` is forced on automatically in production.
+### 3. Deploy the client to Vercel
 
-**4. Keep it running with systemd** (`deploy/northbridge.service` already uses the `northbridge` user and `/opt/northbridge-bank` — adjust if you changed either):
+Import the repo in the Vercel dashboard (or `npm i -g vercel`, then `vercel` from the repo root). `vercel.json` already sets the root directory to `client`, the build command to `npm run build`, and SPA rewrites.
 
-```bash
-sudo cp deploy/northbridge.service /etc/systemd/system/northbridge.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now northbridge
-sudo systemctl status northbridge
-```
+### 4. One-time seeding
 
-Migrations run automatically on boot; the site is now up over plain HTTP on port 4000.
-
-**5. Add HTTPS later.** Open TCP **80** and **443** in the cloud provider's firewall and the OS firewall, then either follow the nginx + certbot route below or use your provider's load balancer / certificate. For example, nginx:
-
-```nginx
-server {
-    listen 80;
-    server_name bank.yourdomain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_buffering off;
-    }
-}
-```
-
-then `sudo apt-get install -y nginx certbot python3-certbot-nginx` and `sudo certbot --nginx` for the certificate.
+- Create the bootstrap administrator with `npm run seed:admin` (authenticated to the real project via the credentials in `.env`).
+- Migrated legacy data: `npm run migrate:data` copies the old SQLite rows into Firestore (read the script header; a real-project run requires `--yes`).
 
 ### Data and backups
 

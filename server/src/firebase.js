@@ -2,11 +2,11 @@
  * Firebase Functions entry point.
  *
  * Wraps the existing Express app in a single HTTPS function so every /api/*
- * route keeps working unchanged. Firebase Hosting rewrites /api/** here (see
- * firebase.json); everything else is served as static SPA files.
+ * route keeps working unchanged. The React SPA is deployed separately (Vercel)
+ * and calls this API cross-origin; there is no Firebase Hosting in this path.
  *
- * Unlike `index.js` (the long-running server), this does not call app.listen -
- * the functions runtime owns the socket.
+ * Unlike `index.js` (the long-running local server), this does not call
+ * app.listen - the functions runtime owns the socket.
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
