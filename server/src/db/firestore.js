@@ -25,7 +25,7 @@
  * are the same keys SQLite assigned (stringified as Firestore requires).
  */
 
-import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { config } from '../core/config.js';
 
@@ -35,13 +35,33 @@ import { config } from '../core/config.js';
 
 let _db = null;
 
+/**
+ * Credential strategy (in priority order):
+ *   1. Emulator  - no credentials wanted; FIRESTORE_EMULATOR_HOST routes calls.
+ *   2. Runtime   - Cloud Functions / VPS provide ADC, so plain projectId is enough.
+ *   3. Local     - a service-account key in .env (FIREBASE_CLIENT_EMAIL +
+ *                  FIREBASE_PRIVATE_KEY) authenticates against the real project.
+ */
+function appOptions() {
+  const projectId = config.firebase.projectId || process.env.GCLOUD_PROJECT || 'demo-northbridge';
+  const emulating = Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.GCLOUD_PROJECT === 'demo-northbridge');
+  const useServiceAccount = !emulating && config.firebase.clientEmail && config.firebase.privateKey;
+  if (useServiceAccount) {
+    return {
+      credential: cert({
+        projectId,
+        clientEmail: config.firebase.clientEmail,
+        privateKey: config.firebase.privateKey,
+      }),
+      projectId,
+    };
+  }
+  return { projectId };
+}
+
 export function initFirestore() {
   if (_db) return _db;
-  const app = getApps().length
-    ? getApp()
-    : initializeApp({
-        projectId: config.firebase.projectId || process.env.GCLOUD_PROJECT || 'demo-northbridge',
-      });
+  const app = getApps().length ? getApp() : initializeApp(appOptions());
   _db = getFirestore(app);
   _db.settings({ ignoreUndefinedProperties: true });
   return _db;

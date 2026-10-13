@@ -90,14 +90,22 @@ const clientOrigin = rawClientOrigin || 'http://localhost:5173';
  *
  * Firestore is the database and Cloud Storage holds customer avatars.
  * Credentials come from the runtime (Cloud Functions) or Application Default
- * Credentials (local / VPS), so no service-account key is configured in code.
- * Storage rules deny all client writes (see storage.rules).
+ * Credentials (local / VPS). When a service-account key is present in the
+ * environment (FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY, as shipped in the
+ * .env template for local runs against the real project), it is used instead
+ * of ADC. Storage rules deny all client writes (see storage.rules).
  * ------------------------------------------------------------------------ */
 const firebase = {
   projectId: str('FIREBASE_PROJECT_ID', ''),
+  clientEmail: str('FIREBASE_CLIENT_EMAIL', ''),
+  privateKey: str('FIREBASE_PRIVATE_KEY', ''),
   // Empty means "use the project's default bucket" (<project>.appspot.com).
   storageBucket: str('FIREBASE_STORAGE_BUCKET', ''),
 };
+
+// Google's service-account JSON replaces literal "\n" escapes in the private
+// key, so normalise them back to real newlines before handing it to cert().
+if (firebase.privateKey) firebase.privateKey = firebase.privateKey.replace(/\\n/g, '\n');
 
 /*
  * Same reasoning as SESSION_SECRET, and it bites harder here because the value
