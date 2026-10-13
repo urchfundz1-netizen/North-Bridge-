@@ -321,7 +321,7 @@ export async function changeTransferPin(customerId, currentPassword, currentPin,
 /* Administrative operations                                                  */
 /* -------------------------------------------------------------------------- */
 
-export function findCustomerById(id) {
+export async function findCustomerById(id) {
   return getById(C.customers, id);
 }
 

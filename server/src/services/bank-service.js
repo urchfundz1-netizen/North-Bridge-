@@ -58,7 +58,7 @@ export async function listBanks({ includeInactive = false, transferType = null, 
   return rows;
 }
 
-export function findBankById(id) {
+export async function findBankById(id) {
   return getById(C.banks, id);
 }
 

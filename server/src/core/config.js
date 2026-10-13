@@ -86,35 +86,18 @@ const rawClientOrigin = str('CLIENT_ORIGIN');
 const clientOrigin = rawClientOrigin || 'http://localhost:5173';
 
 /* --------------------------------------------------------------------------
- * Firebase / Firestore mirror credentials.
+ * Firebase project configuration.
  *
- * Optional by design: with the variables absent the server runs exactly as
- * before and the mirror stays off. When FIREBASE_ENABLED=1 is set, missing
- * pieces fail at boot - a half-configured mirror that silently drops writes
- * would be worse than refusing to start. The private key arrives on one line
- * with literal \n sequences (an .env file cannot hold real newlines), so it
- * is expanded here.
+ * Firestore is the database and Cloud Storage holds customer avatars.
+ * Credentials come from the runtime (Cloud Functions) or Application Default
+ * Credentials (local / VPS), so no service-account key is configured in code.
+ * Storage rules deny all client writes (see storage.rules).
  * ------------------------------------------------------------------------ */
-const firebaseRequested = bool('FIREBASE_ENABLED', false);
 const firebase = {
-  enabled: false,
   projectId: str('FIREBASE_PROJECT_ID', ''),
-  clientEmail: str('FIREBASE_CLIENT_EMAIL', ''),
-  privateKey: str('FIREBASE_PRIVATE_KEY', '').replace(/\\n/g, '\n').trim(),
   // Empty means "use the project's default bucket" (<project>.appspot.com).
   storageBucket: str('FIREBASE_STORAGE_BUCKET', ''),
 };
-
-if (firebaseRequested && (!firebase.projectId || !firebase.clientEmail || !firebase.privateKey)) {
-  throw new Error(
-    'FIREBASE_ENABLED=1 but FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL or FIREBASE_PRIVATE_KEY is missing. ' +
-      'Copy them from the Firebase service account JSON (Project settings -> Service accounts), ' +
-      'or unset FIREBASE_ENABLED to run without the Firestore mirror.',
-  );
-}
-
-// Never mirror from tests: they must stay deterministic and offline.
-firebase.enabled = firebaseRequested && !isTest;
 
 /*
  * Same reasoning as SESSION_SECRET, and it bites harder here because the value
@@ -153,16 +136,7 @@ export const config = {
   adminSessionTtlHours: int('ADMIN_SESSION_TTL_HOURS', 8),
   cookieSecure: bool('COOKIE_SECURE', isProduction),
 
-  databaseFile: isTest
-    ? ':memory:'
-    : resolve(SERVER_ROOT, str('DATABASE_FILE', './data/northbridge.db')),
-
   firebase,
-
-  // Absolute paths (e.g. a mounted volume at /var/data) are honoured as-is,
-  // so a host without a writable checkout directory can put user content
-  // somewhere that survives deploys.
-  uploadsDir: resolve(SERVER_ROOT, str('UPLOADS_DIR', './uploads')),
 
   banking: {
     requireTransferApproval: bool('REQUIRE_TRANSFER_APPROVAL', true),

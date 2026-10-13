@@ -1,8 +1,14 @@
 /**
- * Test harness.
+ * Test harness (Firestore emulator).
  *
- * Each test file gets a fresh in-memory database with the schema applied, so
- * files are isolated and can run in any order.
+ * Each test file runs in its own process (see `npm test`, which wraps the run
+ * in `firebase emulators:exec`). Before every file the harness wipes the
+ * emulator's collections and re-seeds reference data, so files are isolated and
+ * can run in any order without leaking state.
+ *
+ * The exported `getCustomer` / `countTransfers` / `latestAudit` helpers replace
+ * the raw SQL the suite used to run against SQLite: assertions now read the
+ * same documents the services write.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -15,23 +21,63 @@ process.env.COOKIE_SECURE = '0';
 process.env.REQUIRE_TRANSFER_APPROVAL = '1';
 process.env.TRANSFER_FEE_CENTS = '150';
 
-const { getDb, closeDb, one, run, nowIso } = await import('../src/db/connection.js');
-const { migrate } = await import('../src/db/migrate.js');
+// Point firebase-admin at the emulators. `firebase emulators:exec` normally sets
+// these, but pinning them keeps `npm run test:unit` usable when the emulators are
+// already running, and guarantees the admin SDK never reaches for real creds.
+process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
+process.env.STORAGE_EMULATOR_HOST ??= '127.0.0.1:9199';
+process.env.FIREBASE_PROJECT_ID = 'demo-northbridge';
+process.env.GCLOUD_PROJECT = 'demo-northbridge';
+process.env.FIREBASE_STORAGE_BUCKET = 'demo-northbridge.appspot.com';
+
+const {
+  db,
+  C,
+  nowIso,
+  coll,
+  getById,
+  setById,
+  transaction,
+  readCounter,
+  bumpCounter,
+  txnSet,
+  closeFirestore,
+  initFirestore,
+  coerceId,
+  snapRows,
+} = await import('../src/db/firestore.js');
+const { bootstrap } = await import('../src/db/migrate.js');
 const { createApp } = await import('../src/app.js');
 const { hashSecret } = await import('../src/core/crypto.js');
-const { generateUniqueAccountNumber } = await import('../src/core/identifiers.js');
-const { clearSettingsCache } = await import('../src/services/settings.js');
+const { generateAccountNumber } = await import('../src/core/identifiers.js');
+const { clearSettingsCache, loadSettings, setSetting } = await import('../src/services/settings.js');
 
 let app = null;
 let server = null;
 let baseUrl = null;
 
-/** Build an isolated app against a fresh in-memory database. */
+/** Delete every document in every collection (the emulator starts empty). */
+async function wipeFirestore() {
+  const collections = await db().listCollections();
+  for (const collection of collections) {
+    let refs = await collection.listDocuments();
+    while (refs.length) {
+      const batch = db().batch();
+      refs.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+      refs = await collection.listDocuments();
+    }
+  }
+}
+
+/** Build an isolated app against a freshly seeded emulator database. */
 export async function createTestApp() {
-  closeDb();
-  getDb();
-  migrate({ silent: true });
+  closeFirestore();
+  initFirestore();
+  await wipeFirestore();
   clearSettingsCache();
+  await bootstrap({ silent: true });
+  await loadSettings();
   app = createApp({ serveClient: false });
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -43,7 +89,7 @@ export async function destroyTestApp() {
   if (server) await new Promise((resolve) => server.close(resolve));
   server = null;
   app = null;
-  closeDb();
+  closeFirestore();
 }
 
 export function getApp() {
@@ -185,6 +231,10 @@ export class ApiClient {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Direct Firestore seeding (bypasses the HTTP layer)                          */
+/* -------------------------------------------------------------------------- */
+
 /** Create an administrator directly, bypassing the login rate limiter. */
 export async function createAdmin({
   email = `admin-${randomUUID().slice(0, 8)}@northbridge.bank`,
@@ -192,11 +242,28 @@ export async function createAdmin({
   role = 'superadmin',
 } = {}) {
   const passwordHash = await hashSecret(password);
-  const inserted = run(
-    `INSERT INTO admins (email, full_name, password_hash, role) VALUES (?, ?, ?, ?)`,
-    [email, 'Test Administrator', passwordHash, role],
-  );
-  return { id: Number(inserted.lastInsertRowid), email, password, role };
+  const now = nowIso();
+
+  const id = await transaction(async (txn) => {
+    const nextId = await readCounter(txn, C.admins);
+    bumpCounter(txn, C.admins, nextId);
+    txnSet(txn, C.admins, nextId, {
+      id: nextId,
+      email,
+      full_name: 'Test Administrator',
+      password_hash: passwordHash,
+      role,
+      status: 'active',
+      failed_attempts: 0,
+      locked_until: null,
+      last_login_at: null,
+      created_at: now,
+      updated_at: now,
+    });
+    return nextId;
+  });
+
+  return { id, email, password, role };
 }
 
 /** Create a customer directly, optionally with an opening balance. */
@@ -209,45 +276,165 @@ export async function createCustomer({
   fullName = 'Grace Hopper',
   accountType = 'checking',
 } = {}) {
-  const accountNumber = generateUniqueAccountNumber();
-  const inserted = run(
-    `INSERT INTO customers
-       (account_number, full_name, date_of_birth, email, phone, address_line1,
-        city, state_region, postal_code, country, account_type, password_hash,
-        transfer_pin_hash, status, balance_cents)
-     VALUES (?, ?, '1990-01-01', ?, '+1 555 0100', '1 Test Street',
-             'Testville', 'TS', '00000', 'United States', ?, ?, ?, ?, ?)`,
-    [
-      accountNumber,
-      fullName,
+  const accountNumber = generateAccountNumber();
+  const now = nowIso();
+  const [passwordHash, transferPinHash] = await Promise.all([
+    hashSecret(password),
+    hashSecret(transferPin),
+  ]);
+
+  const id = await transaction(async (txn) => {
+    const nextId = await readCounter(txn, C.customers);
+    const entryId = balanceCents > 0 ? await readCounter(txn, C.ledger) : null;
+    bumpCounter(txn, C.customers, nextId);
+    txnSet(txn, C.customers, nextId, {
+      account_number: accountNumber,
+      full_name: fullName,
+      date_of_birth: '1990-01-01',
       email,
-      accountType,
-      await hashSecret(password),
-      await hashSecret(transferPin),
+      phone: '+1 555 0100',
+      address_line1: '1 Test Street',
+      address_line2: null,
+      city: 'Testville',
+      state_region: 'TS',
+      postal_code: '00000',
+      country: 'United States',
+      account_type: accountType,
+      password_hash: passwordHash,
+      transfer_pin_hash: transferPinHash,
+      transfer_pin_hash_updated_at: now,
+      transfer_pin_failed_attempts: 0,
+      transfer_pin_locked_until: null,
+      failed_login_attempts: 0,
+      locked_until: null,
       status,
-      balanceCents,
-    ],
-  );
+      status_reason: null,
+      status_changed_at: null,
+      status_changed_by_admin_id: null,
+      balance_cents: balanceCents,
+      profile_picture: null,
+      last_login_at: null,
+      created_at: now,
+      updated_at: now,
+    });
 
-  const id = Number(inserted.lastInsertRowid);
+    // Seed the opening balance through a real ledger document so the production
+    // invariant - sum(ledger) === balance - holds for test data too.
+    if (balanceCents > 0) {
+      bumpCounter(txn, C.ledger, entryId);
+      txnSet(txn, C.ledger, entryId, {
+        customer_id: nextId,
+        amount_cents: balanceCents,
+        balance_after_cents: balanceCents,
+        entry_type: 'deposit',
+        transfer_id: null,
+        admin_id: null,
+        description: 'Opening balance',
+        reference_number: null,
+        created_at: now,
+      });
+    }
 
-  // Seed the opening balance through a real ledger row so the production
-  // invariant - sum(ledger) === balance - holds for test data too.
-  if (balanceCents > 0) {
-    run(
-      `INSERT INTO ledger_entries
-         (customer_id, amount_cents, balance_after_cents, entry_type, description)
-       VALUES (?, ?, ?, 'deposit', 'Opening balance')`,
-      [id, balanceCents, balanceCents],
-    );
-  }
+    return nextId;
+  });
 
   return { id, email, password, transferPin, accountNumber, status, balanceCents, fullName };
 }
 
-/** The first seeded bank, used as a transfer destination. */
-export function firstBank() {
-  return one('SELECT * FROM banks WHERE is_active = 1 ORDER BY id LIMIT 1');
+/* -------------------------------------------------------------------------- */
+/* Firestore inspection helpers (the old `one` / `run` replacements)           */
+/* -------------------------------------------------------------------------- */
+
+export const getCustomer = (id) => getById(C.customers, id);
+export const getAdmin = (id) => getById(C.admins, id);
+export const getTransfer = (id) => getById(C.transfers, id);
+export const getBank = (id) => getById(C.banks, id);
+
+export function updateCustomer(id, patch) {
+  return setById(C.customers, id, patch, { merge: true });
 }
 
-export { one, run, nowIso, getDb };
+export function updateAdmin(id, patch) {
+  return setById(C.admins, id, patch, { merge: true });
+}
+
+/** All rows of a collection as `{ id, ...data }`, sorted by numeric id asc. */
+async function allRows(collection) {
+  const snap = await coll(collection).get();
+  return snapRows(snap).sort((a, b) => Number(a.id) - Number(b.id));
+}
+
+/** The first seeded bank, used as a transfer destination. */
+export async function firstBank() {
+  const rows = (await allRows(C.banks)).filter((bank) => bank.is_active);
+  return rows[0] ?? null;
+}
+
+/** A bank matching every key/value pair (e.g. `{ supports_wire: 1, supports_local: 0 }`). */
+export async function findBank(match = {}) {
+  const rows = await allRows(C.banks);
+  return (
+    rows.find((bank) =>
+      Object.entries(match).every(([key, value]) => bank[key] === value),
+    ) ?? null
+  );
+}
+
+export async function countTransfers(customerId) {
+  const snap = await coll(C.transfers).where('customer_id', '==', customerId).get();
+  return snap.size;
+}
+
+export async function latestTransfer(customerId) {
+  const snap = await coll(C.transfers).where('customer_id', '==', customerId).get();
+  const rows = snapRows(snap).sort((a, b) => Number(b.id) - Number(a.id));
+  return rows[0] ?? null;
+}
+
+/** Change a setting through the service (also refreshes the in-process cache). */
+export const setSettingValue = (key, value) => setSetting(key, value);
+
+export async function countReceipts(match = {}) {
+  let query = coll(C.receipts);
+  for (const [key, value] of Object.entries(match)) query = query.where(key, '==', value);
+  return (await query.get()).size;
+}
+
+export async function listLedger(customerId, match = {}) {
+  const snap = await coll(C.ledger).where('customer_id', '==', customerId).get();
+  let rows = snapRows(snap);
+  for (const [key, value] of Object.entries(match)) {
+    rows = rows.filter((row) => row[key] === value);
+  }
+  return rows.sort((a, b) => Number(b.id) - Number(a.id));
+}
+
+export async function latestLedgerEntry(customerId) {
+  const rows = await listLedger(customerId);
+  return rows[0] ?? null;
+}
+
+export async function sumLedger(customerId) {
+  const rows = await listLedger(customerId);
+  return rows.reduce((total, row) => total + (row.amount_cents ?? 0), 0);
+}
+
+export async function getSettingValue(key) {
+  const snap = await coll(C.settings).doc(key).get();
+  return snap.exists ? snap.data().value : null;
+}
+
+/** Newest audit rows first, optionally filtered by action and/or target id. */
+export async function listAudit({ action, targetId } = {}) {
+  const rows = await allRows(C.audit);
+  return rows
+    .filter((row) => (action === undefined || row.action === action))
+    .filter((row) => (targetId === undefined || String(row.target_id) === String(targetId)))
+    .sort((a, b) => Number(b.id) - Number(a.id));
+}
+
+export async function latestAudit(filter = {}) {
+  return (await listAudit(filter))[0] ?? null;
+}
+
+export { db, C, coerceId, nowIso };

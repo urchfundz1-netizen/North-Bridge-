@@ -17,13 +17,6 @@ import { reportFailure } from './report-failure.js';
 import { recordAudit, AUDIT_ACTIONS } from '../services/audit.js';
 import { transaction } from './firestore.js';
 
-async function findAdminByEmail(email) {
-  const snap = await coll(C.admins).where('email', '==', email).limit(1).get();
-  if (snap.empty) return null;
-  const doc = snap.docs[0];
-  return { id: coerceId(doc.id), ...doc.data() };
-}
-
 export async function seedAdmin({ email, password, fullName } = {}) {
   const adminEmail = (email ?? config.admin.email ?? '').trim().toLowerCase();
   const adminPassword = password ?? config.admin.password;

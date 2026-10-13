@@ -22,7 +22,8 @@ import {
   createCustomer,
   createAdmin,
   firstBank,
-  one,
+  getSettingValue,
+  latestAudit,
 } from './helpers.js';
 
 let baseUrl;
@@ -30,7 +31,7 @@ let bank;
 
 before(async () => {
   baseUrl = await createTestApp();
-  bank = firstBank();
+  bank = await firstBank();
 });
 
 after(async () => {
@@ -132,9 +133,7 @@ describe('settings changes are audited', () => {
     const admin = await createAdmin({ role: 'superadmin' });
     await client.loginAdmin(admin.email, admin.password);
 
-    const before = client
-      ? one('SELECT value FROM settings WHERE key = ?', ['transfer_fee_cents'])
-      : null;
+    const before = await getSettingValue('transfer_fee_cents');
 
     const response = await client.patch('/api/admin/settings', {
       key: 'transfer_fee_cents',
@@ -145,9 +144,7 @@ describe('settings changes are audited', () => {
     assert.equal(response.status, 200, JSON.stringify(response.body));
     assert.equal(response.body.rules.transferFeeCents, 275);
 
-    const entry = one(
-      "SELECT * FROM audit_logs WHERE action = 'setting.updated' AND target_id = 'transfer_fee_cents' ORDER BY id DESC LIMIT 1",
-    );
+    const entry = await latestAudit({ action: 'setting.updated', targetId: 'transfer_fee_cents' });
 
     assert.ok(entry, 'a setting.updated audit entry should exist');
     assert.ok(entry.action, 'the action name must not be null');
@@ -167,7 +164,7 @@ describe('settings changes are audited', () => {
 
     assert.ok(seen, 'the change should be visible in the audit log');
     assert.equal(seen.metadata?.after, '275');
-    assert.equal(String(seen.metadata?.before), String(before?.value));
+    assert.equal(String(seen.metadata?.before), String(before));
 
     // Restore, so the suite does not leak its fee change into other tests.
     await client.patch('/api/admin/settings', { key: 'transfer_fee_cents', value: '150' });

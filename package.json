@@ -20,8 +20,8 @@
     "migrate": "npm --workspace server run migrate",
     "seed": "npm --workspace server run seed",
     "seed:admin": "npm --workspace server run seed:admin",
-    "firestore:backfill": "npm --workspace server run firestore:backfill",
-    "test": "npm --workspace server run test",
+    "test": "firebase emulators:exec --only firestore,storage --project demo-northbridge \"npm --workspace server run test\"",
+    "test:unit": "npm --workspace server run test",
     "smoke": "node scripts/smoke.mjs",
     "check:svg": "node scripts/check-svg.mjs",
     "lint": "eslint server/src server/test client/src scripts"
@@ -33,6 +33,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "firebase-tools": "^15.0.0",
     "globals": "^14.0.0"
   }
 }

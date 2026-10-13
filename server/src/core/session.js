@@ -37,7 +37,7 @@ export async function createSession(actorType, actorId, request = null) {
   await db().collection(C.sessions).doc(tokenHash).set({
     token_hash: tokenHash,
     actor_type: actorType,
-    actor_id: actorId,
+    actor_id: String(actorId),
     csrf_token: csrfToken,
     ip_address: request ? (request.ip ?? null) : null,
     user_agent: request ? (request.get('user-agent') ?? null).slice(0, 300) : null,
@@ -85,7 +85,7 @@ export async function revokeSessionsFor(actorType, actorId) {
   const snap = await db()
     .collection(C.sessions)
     .where('actor_type', '==', actorType)
-    .where('actor_id', '==', actorId)
+    .where('actor_id', '==', String(actorId))
     .where('revoked_at', '==', null)
     .get();
 

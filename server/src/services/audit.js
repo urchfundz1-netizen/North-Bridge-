@@ -3,7 +3,7 @@
  *
  * Every privileged or financially significant action is recorded here. The
  * collection is written through a single append path and never updated or
- * deleted, so it stands in for the SQLite append-only trigger.
+ * deleted, standing in for a database append-only trigger.
  */
 
 import { C, transaction, readCounter, bumpCounter, txnSet, getById, nowIso } from '../db/firestore.js';

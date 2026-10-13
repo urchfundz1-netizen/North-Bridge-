@@ -2,8 +2,8 @@
  * Error handling middleware.
  *
  * ApiError messages are shown to the user verbatim. Everything else is logged
- * in full server-side but replaced with a generic message, so SQL text, file
- * paths and stack traces never reach a client.
+ * in full server-side but replaced with a generic message, so file paths and
+ * stack traces never reach a client.
  */
 
 import { ApiError } from '../core/errors.js';
@@ -30,47 +30,11 @@ export function errorHandler(error, req, res, next) {
     });
   }
 
-  // Translate the SQLite integrity constraints into user-meaningful errors
-  // instead of leaking "UNIQUE constraint failed".
-  const sqliteMessage = String(error?.message ?? '');
-
-  if (sqliteMessage.includes('UNIQUE constraint failed: customers.email')) {
+  // Safety net for a unique constraint violation that a service did not
+  // translate into a friendlier ApiError of its own.
+  if (error?.code === 'unique_violation') {
     return res.status(409).json({
-      error: { code: 'email_taken', message: 'An account already exists for that email address.' },
-    });
-  }
-  if (sqliteMessage.includes('UNIQUE constraint failed: customers.account_number')) {
-    return res.status(409).json({
-      error: { code: 'account_exists', message: 'That account number is already in use.' },
-    });
-  }
-  if (sqliteMessage.includes('UNIQUE constraint failed: transfers.idempotency_key')) {
-    return res.status(409).json({
-      error: {
-        code: 'duplicate_transfer',
-        message: 'This transfer has already been submitted.',
-      },
-    });
-  }
-  if (sqliteMessage.includes('UNIQUE constraint failed: ledger_entries')) {
-    return res.status(409).json({
-      error: {
-        code: 'already_settled',
-        message: 'This transaction has already been settled and cannot be applied again.',
-      },
-    });
-  }
-  if (sqliteMessage.includes('CHECK constraint failed: customers.balance_cents')) {
-    return res.status(409).json({
-      error: { code: 'insufficient_funds', message: 'Insufficient available balance.' },
-    });
-  }
-  if (sqliteMessage.includes('append-only')) {
-    return res.status(409).json({
-      error: {
-        code: 'immutable_record',
-        message: 'Compliance records cannot be modified or deleted.',
-      },
+      error: { code: 'conflict', message: 'That value is already in use.' },
     });
   }
 

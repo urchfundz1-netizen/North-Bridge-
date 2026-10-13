@@ -20,8 +20,8 @@
  * helpers are `txnSet`, `txnDelete`, `bumpCounter`, `claimUnique`,
  * `releaseUnique`.
  *
- * Documents use the same snake_case field names the SQLite tables used, so the
- * existing serializers, receipts and mirror keep working unchanged. Numeric ids
+ * Documents use the same snake_case field names the old SQLite tables used, so
+ * the existing serializers and receipts keep working unchanged. Numeric ids
  * are the same keys SQLite assigned (stringified as Firestore requires).
  */
 

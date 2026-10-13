@@ -40,7 +40,7 @@ router.get(
 router.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const bank = findBankById(Number(req.params.id));
+    const bank = await findBankById(Number(req.params.id));
     if (!bank) throw notFound('Bank not found.');
     res.json({ bank: toBank(bank) });
   }),

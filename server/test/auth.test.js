@@ -16,7 +16,9 @@ import {
   createCustomer,
   createAdmin,
   firstBank,
-  one,
+  getCustomer,
+  countTransfers,
+  updateAdmin,
 } from './helpers.js';
 
 let baseUrl;
@@ -24,7 +26,7 @@ let bank;
 
 before(async () => {
   baseUrl = await createTestApp();
-  bank = firstBank();
+  bank = await firstBank();
 });
 
 after(async () => {
@@ -175,7 +177,7 @@ describe('customer authentication', () => {
       await client.post('/api/auth/login', { email: record.email, password: 'DefinitelyWrong#1' });
     }
 
-    const locked = one('SELECT * FROM customers WHERE id = ?', [record.id]);
+    const locked = await getCustomer(record.id);
     assert.equal(locked.status, 'locked');
     assert.equal(locked.failed_login_attempts, 6);
     assert.match(locked.status_reason, /failed sign-in/i);
@@ -333,8 +335,7 @@ describe('privilege separation', () => {
     const client = new ApiClient(baseUrl);
     await client.loginAdmin(admin.email, admin.password);
 
-    const { run } = await import('../src/db/connection.js');
-    run("UPDATE admins SET status = 'disabled' WHERE id = ?", [admin.id]);
+    await updateAdmin(admin.id, { status: 'disabled' });
 
     const response = await client.get('/api/admin/customers');
     assert.equal(response.status, 401, 'a disabled admin session stops resolving');
@@ -366,11 +367,7 @@ describe('CSRF protection', () => {
 
     client.csrfToken = savedToken;
     assert.equal(response.status, 403);
-    assert.equal(
-      one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n,
-      0,
-      'no transfer may be created',
-    );
+    assert.equal(await countTransfers(record.id), 0, 'no transfer may be created');
   });
 
   test('a wrong CSRF token is refused', async () => {
@@ -388,7 +385,7 @@ describe('CSRF protection', () => {
 
     assert.equal(response.status, 403);
     assert.equal(
-      one('SELECT phone FROM customers WHERE id = ?', [record.id]).phone,
+      (await getCustomer(record.id)).phone,
       '+1 555 0100',
       'the profile must be unchanged',
     );
@@ -448,9 +445,12 @@ describe('profile picture uploads', () => {
 
     const response = await client.request('POST', '/api/account/profile/picture', imageForm(PNG_BYTES));
     assert.equal(response.status, 200);
-    assert.match(response.body.profilePicture, /^\/uploads\/avatars\/customer-\d+-[0-9a-f]{16}\.png$/);
+    assert.match(
+      response.body.profilePicture,
+      /^https:\/\/firebasestorage\.googleapis\.com\/.+\/avatars%2F.+\.png\?alt=media&token=/,
+    );
 
-    const stored = one('SELECT profile_picture FROM customers WHERE id = ?', [record.id]);
+    const stored = await getCustomer(record.id);
     assert.equal(stored.profile_picture, response.body.profilePicture);
   });
 
@@ -464,7 +464,7 @@ describe('profile picture uploads', () => {
 
     const response = await client.request('POST', '/api/account/profile/picture', form);
     assert.equal(response.status, 400);
-    assert.equal(one('SELECT profile_picture FROM customers WHERE id = ?', [record.id]).profile_picture, null);
+    assert.equal((await getCustomer(record.id)).profile_picture, null);
   });
 
   test('an SVG disguised as a PNG is refused by MIME check', async () => {

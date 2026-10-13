@@ -25,9 +25,9 @@ RestartSec=3
 
 Environment=NODE_ENV=production
 
-# Data lives here: server/data/northbridge.db (SQLite) and server/uploads.
-# Move them somewhere else by setting DATABASE_FILE / UPLOADS_DIR in .env to
-# another absolute path.
+# The database is Firestore (see FIREBASE_PROJECT_ID in .env); credentials come
+# from Application Default Credentials, e.g. a GOOGLE_APPLICATION_CREDENTIALS
+# service-account JSON for this host.
 
 # Optional hardening; drop them if anything misbehaves.
 NoNewPrivileges=true

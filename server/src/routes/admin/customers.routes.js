@@ -140,7 +140,7 @@ router.get(
   validateQuery(ledgerListSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    if (!findCustomerById(id)) throw notFound('Customer not found.');
+    if (!(await findCustomerById(id))) throw notFound('Customer not found.');
 
     const { limit, offset, entryType } = req.validatedQuery;
     const { rows, total } = await listEntries(id, {
@@ -217,7 +217,7 @@ router.post(
   upload.single('picture'),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const customer = findCustomerById(id);
+    const customer = await findCustomerById(id);
     if (!customer) throw notFound('Customer not found.');
     if (!req.file) throw badRequest('Select an image to upload.');
 

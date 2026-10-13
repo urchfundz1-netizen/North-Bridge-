@@ -7,9 +7,8 @@ Full-stack online banking platform: a customer portal (transfers, receipts, secu
 | Layer    | Choice                                                          |
 | -------- | --------------------------------------------------------------- |
 | Server   | Node >= 22.5, Express 4, Zod validation, ESM                     |
-| Database | SQLite via Node's built-in `node:sqlite` (no native build step) |
+| Database | Firestore via `firebase-admin`; Cloud Storage for avatars        |
 | Client   | React 18, Vite 6, react-router 6 (SPA)                          |
-| Mirror   | Optional Firebase Firestore mirror via `firebase-admin`         |
 
 ## Features
 
@@ -17,7 +16,7 @@ Full-stack online banking platform: a customer portal (transfers, receipts, secu
 
 **Admin panel** — customer onboarding (with server-generated transfer PIN), funding and balance adjustments, transfer approval queue (toggleable), bank catalogue management, immutable audit log, system settings (transfer limits, fees, approval requirement), freeze / block account status controls.
 
-**Ledger integrity** — every movement is a ledger entry; balances are reconstructed from entries, negative balances are blocked by a database constraint, and settled rows cannot be deleted or updated.
+**Ledger integrity** — every movement is a ledger entry; balances are reconstructed from entries, negative balances are blocked at the point of write, and settled rows are never updated or deleted.
 
 ## Quick start
 
@@ -29,7 +28,7 @@ npm install
 copy .env.example .env      # Windows: Copy-Item .env.example .env
 # edit .env - at minimum keep SESSION_SECRET unique
 
-npm run migrate             # applies schema + reference data (idempotent)
+npm run migrate             # applies reference data + settings (idempotent)
 npm run seed:admin          # creates the bootstrap administrator
 npm run dev                 # server on :4000, client on :5173
 ```
@@ -48,8 +47,8 @@ Sign in at `http://localhost:5173/admin` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` f
 | `npm run migrate`       | Idempotent schema migration + reference seed                     |
 | `npm run seed`          | Top up settings and bank catalogue (safe to re-run)              |
 | `npm run seed:admin`    | Create/refresh the bootstrap administrator                       |
-| `npm run firestore:backfill` | Mirror existing SQLite rows into Firestore                   |
-| `npm test`              | Server test suite (in-memory SQLite, 75 tests)                   |
+| `npm test`              | Server test suite against the Firestore emulator (72 tests)      |
+| `npm run test:unit`     | Same tests, against emulators you have already started           |
 | `npm run lint`          | ESLint across server, client and scripts                         |
 | `npm run smoke`         | End-to-end HTTP smoke test against a **running** server          |
 | `npm run check:svg`     | Validate the bank illustration SVG                               |
@@ -61,17 +60,17 @@ Sign in at `http://localhost:5173/admin` with `ADMIN_EMAIL` / `ADMIN_PASSWORD` f
 ```
 server/
   src/core/        config, crypto (scrypt), errors, money, sessions
-  src/db/          connection, schema.sql, migrations, seeds, Firestore backfill
+  src/db/          Firestore access layer, migrations, seeds
   src/middleware/  auth, CSRF-aware validation, throttling, error handler
   src/routes/      auth, account, transfers + admin/* (customers, transfers, banks, system)
-  src/services/    ledger, transfers, receipts, audit, settings, Firestore mirror
-  test/            node:test suite against isolated in-memory databases
+  src/services/    ledger, transfers, receipts, audit, settings
+  test/            node:test suite against the Firestore emulator
 client/
   src/pages/       public / customer / admin routes
   src/components/  UI primitives, layout, icons
   src/api/         fetch wrapper with cookie + CSRF handling
 scripts/           smoke test, SVG checker
-firestore.rules    Firestore security rules for the optional mirror
+firestore.rules    Firestore security rules (deny all client access)
 deploy/            systemd unit for running the app as a service on a VPS
 .env.production.example  production env template (copy to .env on the server)
 ```
@@ -83,11 +82,11 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 - `CLIENT_ORIGIN` — must match the real client origin; the server refuses to boot in production while it is still a loopback address (silent CORS failures otherwise).
 - `REQUIRE_TRANSFER_APPROVAL` — `1` keeps transfers Pending until an admin approves them; `0` settles immediately.
 - `TRANSFER_FEE_CENTS`, `MIN_TRANSFER_CENTS`, `MAX_TRANSFER_CENTS` — fee and guard rails.
-- `FIREBASE_ENABLED=0` (default) turns the Firestore mirror off entirely; SQLite stays the source of truth.
+- `FIREBASE_PROJECT_ID` — the Firestore project (set `demo-northbridge` for the emulator).
 
 ## Deploying
 
-The app is a single Node process that serves the API and the built SPA from one origin, and the database is a plain SQLite file (no separate database server). There is **no Docker and no Tailscale** in this path — a deployment is just Node on a host, a domain pointed at it, and something that terminates HTTPS.
+The app is a single Node process that serves the API and the built SPA from one origin, backed by Firestore and Cloud Storage (no separate database server). There is **no Docker and no Tailscale** in this path — a deployment is just Node on a host, a domain pointed at it, and something that terminates HTTPS.
 
 ### 1. Run it on your own machine (now)
 
@@ -180,14 +179,14 @@ then `sudo apt-get install -y nginx certbot python3-certbot-nginx` and `sudo cer
 
 ### Data and backups
 
-Everything durable is two things: the SQLite file (default `server/data/northbridge.db`) and uploaded avatars (`server/uploads/`). Back up the database online-safely on a schedule with `sqlite3 northbridge.db .backup /backups/northbridge-$(date +%F).db` (`sudo apt-get install -y sqlite3`), and copy the `uploads/` directory periodically. The Firestore mirror ships disabled (`FIREBASE_ENABLED=0`); enable it only after adding real Firebase credentials.
+Firestore and Cloud Storage are the only datastores — there is no local database file or `uploads/` directory to back up. Enable the project's backups in the Firebase console (Firestore native backups / scheduled exports, and Storage object versioning if you want rollback). The test suite runs entirely against local emulators and never touches the real project.
 
 ## Security notes
 
 - Passwords and transfer PINs hashed with scrypt (memory-hard, per-secret salt, versioned format with automatic rehash on login).
-- Sessions are server-side rows; the browser holds only an opaque `httpOnly` cookie, stored as a SHA-256 digest. Customer and admin cookies are separate and enforced by `actor_type` in SQL.
+- Sessions are server-side documents; the browser holds only an opaque `httpOnly` cookie, stored as a SHA-256 digest. Customer and admin cookies are separate and enforced by `actor_type` in the session document.
 - Per-session CSRF tokens (double-submit), rate limiting on login and PIN confirmation per IP and per account.
-- Audit log rows are append-only (SQL triggers reject UPDATE/DELETE).
+- Audit log documents are written through a single append path, never updated or deleted; Firestore rules deny all client access.
 
 ## Licence
 

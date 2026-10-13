@@ -16,8 +16,17 @@ import {
   createCustomer,
   createAdmin,
   firstBank,
-  one,
-  run,
+  findBank,
+  getCustomer,
+  countTransfers,
+  countReceipts,
+  listLedger,
+  latestLedgerEntry,
+  latestTransfer,
+  latestAudit,
+  sumLedger,
+  setSettingValue,
+  updateCustomer,
 } from './helpers.js';
 
 let baseUrl;
@@ -25,7 +34,7 @@ let bank;
 
 before(async () => {
   baseUrl = await createTestApp();
-  bank = firstBank();
+  bank = await firstBank();
 });
 
 after(async () => {
@@ -74,7 +83,7 @@ describe('transfer creation', () => {
     const response = await submitTransfer(client);
     assert.equal(response.status, 201);
 
-    const after = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]);
+    const after = await getCustomer(record.id);
     assert.equal(after.balance_cents, 500_000, 'balance must be untouched while pending');
 
     assert.equal(response.body.transfer.status, 'pending');
@@ -91,7 +100,7 @@ describe('transfer creation', () => {
     assert.match(response.body.error.message, /Incorrect transfer PIN/i);
 
     assert.equal(
-      one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n,
+      await countTransfers(record.id),
       0,
       'no transfer row may exist when the PIN fails',
     );
@@ -113,7 +122,7 @@ describe('transfer creation', () => {
       await submitTransfer(client, { transferPin: '0000' });
     }
 
-    const locked = one('SELECT * FROM customers WHERE id = ?', [record.id]);
+    const locked = await getCustomer(record.id);
     assert.equal(locked.transfer_pin_failed_attempts, 5);
     assert.ok(locked.transfer_pin_locked_until, 'PIN must be locked after 5 failures');
 
@@ -130,7 +139,7 @@ describe('transfer creation', () => {
     assert.equal(response.status, 422);
     assert.match(JSON.stringify(response.body.error.details), /balance/i);
 
-    assert.equal(one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n, 0);
+    assert.equal(await countTransfers(record.id), 0);
   });
 
   test('rejects a non-positive or malformed amount', async () => {
@@ -143,7 +152,7 @@ describe('transfer creation', () => {
   });
 
   test('rejects a bank that does not support the transfer type', async () => {
-    const wireOnlyBank = one("SELECT * FROM banks WHERE supports_wire = 1 AND supports_local = 0 LIMIT 1");
+    const wireOnlyBank = await findBank({ supports_wire: 1, supports_local: 0 });
     const { client } = await fundedCustomer();
 
     const response = await submitTransfer(client, {
@@ -172,7 +181,7 @@ describe('transfer creation', () => {
     assert.equal(first.status, 201);
     assert.equal(second.status, 200, 'a retried submission returns the original');
     assert.equal(first.body.transfer.id, second.body.transfer.id);
-    assert.equal(one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n, 1);
+    assert.equal(await countTransfers(record.id), 1);
   });
 });
 
@@ -192,16 +201,12 @@ describe('transfer approval', () => {
     assert.equal(approved.status, 200);
     assert.equal(approved.body.transfer.status, 'approved');
 
-    const after = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]);
+    const after = await getCustomer(record.id);
     assert.equal(after.balance_cents, 500_000 - 10_150);
 
-    const entries = one(
-      `SELECT COUNT(*) AS n, SUM(amount_cents) AS total FROM ledger_entries
-        WHERE customer_id = ? AND transfer_id = ?`,
-      [record.id, transferId],
-    );
-    assert.equal(entries.n, 2, 'principal + fee');
-    assert.equal(entries.total, -10_150);
+    const entries = await listLedger(record.id, { transfer_id: transferId });
+    assert.equal(entries.length, 2, 'principal + fee');
+    assert.equal(entries.reduce((total, entry) => total + entry.amount_cents, 0), -10_150);
   });
 
   test('a receipt is generated on approval', async () => {
@@ -235,10 +240,7 @@ describe('transfer approval', () => {
     assert.ok(payload.transaction.settledAt, 'the settlement timestamp is recorded');
 
     // Exactly one receipt per transfer.
-    assert.equal(
-      one('SELECT COUNT(*) AS n FROM receipts WHERE transfer_id = ?', [created.body.transfer.id]).n,
-      1,
-    );
+    assert.equal(await countReceipts({ transfer_id: created.body.transfer.id }), 1);
 
     // The customer can read their own receipt.
     const mine = await client.get(`/api/transfers/${created.body.transfer.id}/receipt`);
@@ -275,14 +277,11 @@ describe('transfer approval', () => {
     assert.equal(second.status, 200);
     assert.equal(second.body.alreadyProcessed, true, 'second approval is reported as a no-op');
 
-    const after = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]);
+    const after = await getCustomer(record.id);
     assert.equal(after.balance_cents, 500_000 - 10_150, 'only one debit may ever occur');
 
-    const entries = one(
-      'SELECT COUNT(*) AS n FROM ledger_entries WHERE customer_id = ? AND transfer_id = ?',
-      [record.id, transferId],
-    );
-    assert.equal(entries.n, 2, 'no duplicate principal or fee rows');
+    const entries = await listLedger(record.id, { transfer_id: transferId });
+    assert.equal(entries.length, 2, 'no duplicate principal or fee rows');
   });
 
   test('two administrators approving at once settles exactly once', async () => {
@@ -302,7 +301,7 @@ describe('transfer approval', () => {
     const successes = results.filter((r) => r.status === 200 && !r.body.alreadyProcessed);
     assert.equal(successes.length, 1, 'exactly one approval may take effect');
 
-    const after = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]);
+    const after = await getCustomer(record.id);
     assert.equal(after.balance_cents, 500_000 - 10_150);
   });
 
@@ -322,9 +321,9 @@ describe('transfer approval', () => {
     assert.equal(rejected.status, 200);
     assert.equal(rejected.body.transfer.status, 'rejected');
 
-    assert.equal(one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]).balance_cents, 500_000);
+    assert.equal((await getCustomer(record.id)).balance_cents, 500_000);
     assert.equal(
-      one('SELECT COUNT(*) AS n FROM ledger_entries WHERE transfer_id = ?', [transferId]).n,
+      (await listLedger(record.id, { transfer_id: transferId })).length,
       0,
       'a rejected transfer writes no ledger rows',
     );
@@ -350,14 +349,14 @@ describe('transfer approval', () => {
     const transferId = created.body.transfer.id;
 
     // Drain the account below what the pending transfer needs.
-    run(`UPDATE customers SET balance_cents = 100 WHERE id = ?`, [record.id]);
+    await updateCustomer(record.id, { balance_cents: 100 });
 
     const admin = await adminClient();
     const response = await admin.client.post(`/api/admin/transfers/${transferId}/approve`, {});
 
     assert.equal(response.status, 409);
     assert.match(response.body.error.message, /Cannot approve/i);
-    assert.equal(one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]).balance_cents, 100);
+    assert.equal((await getCustomer(record.id)).balance_cents, 100);
   });
 
   test('a customer can cancel only a pending transfer', async () => {
@@ -406,7 +405,7 @@ describe('account status restrictions', () => {
 
       if (!expected.canSubmit) {
         assert.equal(
-          one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n,
+          await countTransfers(record.id),
           0,
           'no transfer may be created from a non-active account',
         );
@@ -416,7 +415,7 @@ describe('account status restrictions', () => {
         // frozen: authenticated but explicitly forbidden from moving money.
         const response = await submitTransfer(client);
         assert.equal(response.status, 403);
-        assert.equal(one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n, 0);
+        assert.equal(await countTransfers(record.id), 0);
       }
     });
   }
@@ -436,7 +435,7 @@ describe('account status restrictions', () => {
     const profile = await client.patch('/api/account/profile', { status: 'active' });
     assert.equal(profile.status, 422, 'status is not an editable profile field');
 
-    assert.equal(one('SELECT status FROM customers WHERE id = ?', [record.id]).status, 'active');
+    assert.equal((await getCustomer(record.id)).status, 'active');
   });
 
   test('an administrator status change requires a reason and is audited', async () => {
@@ -455,11 +454,7 @@ describe('account status restrictions', () => {
     assert.equal(response.status, 200);
     assert.equal(response.body.customer.status, 'frozen');
 
-    const audit = one(
-      `SELECT * FROM audit_logs WHERE action = 'account.status_changed' AND target_id = ?
-        ORDER BY id DESC LIMIT 1`,
-      [String(record.id)],
-    );
+    const audit = await latestAudit({ action: 'account.status_changed', targetId: record.id });
     assert.ok(audit, 'status change must be audited');
     assert.equal(audit.reason, 'Compliance review pending on this account.');
     assert.equal(audit.actor_type, 'admin');
@@ -519,7 +514,7 @@ describe('account status restrictions', () => {
 
     const blocked = await submitTransfer(client);
     assert.equal(blocked.status, 403, 'a frozen account must not be able to send money');
-    assert.equal(one('SELECT COUNT(*) AS n FROM transfers WHERE customer_id = ?', [record.id]).n, 0);
+    assert.equal(await countTransfers(record.id), 0);
   });
 });
 
@@ -590,7 +585,7 @@ describe('receipt issued on confirmation', () => {
     assert.ok(after.payload.transaction.settledAt, 'the settlement time is recorded');
 
     // Frozen: a settled receipt must not be rewritten by later activity.
-    run("UPDATE settings SET value = 'Renamed Bank' WHERE key = 'bank_name'");
+    await setSettingValue('bank_name', 'Renamed Bank');
     const again = await client.get(`/api/transfers/${transferId}/receipt`);
     assert.equal(
       again.body.receipt.payload.bank.name,
@@ -643,7 +638,7 @@ describe('receipt issued on confirmation', () => {
     assert.equal(payload.transaction.statusLabel, 'Cancelled');
     assert.equal(payload.amounts.debited, false);
 
-    const balance = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]);
+    const balance = await getCustomer(record.id);
     assert.equal(balance.balance_cents, 500_000, 'cancelling still moves no money');
   });
 
@@ -688,15 +683,13 @@ describe('administrator funding', () => {
     assert.equal(response.status, 200);
     assert.equal(response.body.customer.balanceCents, 75_025);
 
-    const entry = one('SELECT * FROM ledger_entries WHERE customer_id = ? ORDER BY id DESC LIMIT 1', [
-      record.id,
-    ]);
+    const entry = await latestLedgerEntry(record.id);
     assert.equal(entry.amount_cents, 75_025);
     assert.equal(entry.balance_after_cents, 75_025);
     assert.equal(entry.entry_type, 'deposit');
     assert.ok(entry.admin_id, 'the funding admin is recorded on the ledger row');
 
-    const audit = one("SELECT * FROM audit_logs WHERE action = 'account.funded' ORDER BY id DESC LIMIT 1");
+    const audit = await latestAudit({ action: 'account.funded' });
     assert.ok(audit);
     assert.equal(audit.reason, 'Opening deposit');
   });
@@ -721,7 +714,7 @@ describe('administrator funding', () => {
     });
 
     assert.equal(response.status, 409, 'an overdraw must be refused, not applied');
-    assert.equal(one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]).balance_cents, 10_000);
+    assert.equal((await getCustomer(record.id)).balance_cents, 10_000);
   });
 });
 
@@ -738,9 +731,7 @@ describe('ledger integrity', () => {
     await submitTransfer(client, { amount: '50.00', description: 'First' });
 
     const admin = await adminClient();
-    const pending = one('SELECT id FROM transfers WHERE customer_id = ? ORDER BY id DESC LIMIT 1', [
-      record.id,
-    ]);
+    const pending = await latestTransfer(record.id);
     await admin.client.post(`/api/admin/transfers/${pending.id}/approve`, {});
 
     await admin.client.post(`/api/admin/customers/${record.id}/fund`, {
@@ -748,55 +739,18 @@ describe('ledger integrity', () => {
       description: 'Test credit',
     });
 
-    const sum = one(
-      'SELECT COALESCE(SUM(amount_cents), 0) AS total FROM ledger_entries WHERE customer_id = ?',
-      [record.id],
-    ).total;
-    const balance = one('SELECT balance_cents FROM customers WHERE id = ?', [record.id]).balance_cents;
+    const sum = await sumLedger(record.id);
+    const balance = (await getCustomer(record.id)).balance_cents;
 
     assert.equal(sum, balance, 'sum of all ledger entries must equal the balance');
     assert.equal(balance, 200_000 - 5_150 + 100_000);
   });
 
-  test('audit log rows cannot be deleted or updated', async () => {
-    // Signing in writes an audit row, so there is always one to tamper with.
-    await adminClient();
-    const id = one('SELECT id FROM audit_logs ORDER BY id DESC LIMIT 1')?.id;
-    if (!id) return;
-
-    assert.throws(
-      () => run('DELETE FROM audit_logs WHERE id = ?', [id]),
-      /append-only/,
-      'audit rows must not be deletable',
-    );
-    assert.throws(
-      () => run("UPDATE audit_logs SET action = 'tampered' WHERE id = ?", [id]),
-      /append-only/,
-      'audit rows must not be updatable',
-    );
-  });
-
-  test('a settled ledger row cannot be deleted', async () => {
-    const record = await createCustomer({ balanceCents: 300_000 });
-    const client = new ApiClient(baseUrl);
-    await client.loginCustomer(record.email, record.password);
-    const created = await submitTransfer(client, { amount: '25.00' });
-
-    const admin = await adminClient();
-    await admin.client.post(`/api/admin/transfers/${created.body.transfer.id}/approve`, {});
-
-    assert.throws(
-      () => run('DELETE FROM ledger_entries WHERE transfer_id = ?', [created.body.transfer.id]),
-      /cannot be deleted/,
-    );
-  });
-
-  test('the balance column cannot be driven negative by direct SQL', async () => {
-    const record = await createCustomer({ balanceCents: 1_000 });
-    assert.throws(
-      () => run('UPDATE customers SET balance_cents = -5 WHERE id = ?', [record.id]),
-      /CHECK constraint/i,
-      'the schema itself must refuse a negative balance',
-    );
-  });
+  // NOTE: Firestore has no DDL triggers or CHECK constraints, so the old
+  // "append-only audit log" / "no negative balance by direct SQL" storage-layer
+  // guarantees no longer apply. Those guarantees now live in the service layer
+  // (the sole writer, which refuses an overdraw) and in the Firestore security
+  // rules; they are covered by "an adjustment cannot overdraw the account",
+  // "approving twice does not debit twice", and the read-only audit-log route
+  // tests in auth.test.js.
 });

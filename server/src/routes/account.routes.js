@@ -65,7 +65,7 @@ router.get(
   '/profile',
   asyncHandler(async (req, res) => {
     res.json({
-      customer: toCustomerSelf(findCustomerById(req.auth.actorId)),
+      customer: toCustomerSelf(await findCustomerById(req.auth.actorId)),
       rules: bankingRules(),
     });
   }),
@@ -134,7 +134,7 @@ router.get(
     const statement = await summarise(customerId);
 
     res.json({
-      customer: toCustomerSelf(findCustomerById(customerId)),
+      customer: toCustomerSelf(await findCustomerById(customerId)),
       recentTransactions: recent.map(toLedgerEntry),
       pendingTransfers: { total: pending.total, rows: pending.rows },
       statement,
@@ -187,7 +187,7 @@ router.get(
 router.get(
   '/banks/:id',
   asyncHandler(async (req, res) => {
-    const bank = findBankById(Number(req.params.id));
+    const bank = await findBankById(Number(req.params.id));
     if (!bank || !bank.is_active) throw notFound('That bank is not available.');
     res.json({
       bank: {

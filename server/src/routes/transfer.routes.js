@@ -57,7 +57,7 @@ router.post(
   requireCsrf,
   validateBody(transferQuoteSchema),
   asyncHandler(async (req, res) => {
-    const customer = findCustomerById(req.auth.actorId);
+    const customer = await findCustomerById(req.auth.actorId);
     const balance = await getBalance(customer.id);
     const prepared = await prepareTransfer(req.body, {
       customerId: customer.id,
@@ -76,7 +76,7 @@ router.post(
         requiresApproval: prepared.requiresApproval,
         balanceCents: balance,
         balanceFormatted: formatCents(balance),
-        bank: toBank(findBankById(prepared.recipientBankId)),
+        bank: toBank(await findBankById(prepared.recipientBankId)),
       },
     });
   }),
@@ -100,7 +100,7 @@ router.post(
   requireCsrf,
   validateBody(transferSchema),
   asyncHandler(async (req, res) => {
-    const customer = findCustomerById(req.auth.actorId);
+    const customer = await findCustomerById(req.auth.actorId);
 
     // Status is checked after the PIN so an unrelated account-state error
     // cannot be used as an oracle to test credentials.
@@ -228,7 +228,7 @@ router.post(
   '/:id/cancel',
   requireCsrf,
   asyncHandler(async (req, res) => {
-    const customer = findCustomerById(req.auth.actorId);
+    const customer = await findCustomerById(req.auth.actorId);
     const { transfer } = await cancelTransfer({ transferId: Number(req.params.id), customer, request: req });
     res.json({
       transfer: toTransfer(transfer),
