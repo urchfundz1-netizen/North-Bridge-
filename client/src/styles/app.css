@@ -495,10 +495,12 @@ table {
   gap: var(--space-2);
 }
 
-/* The "Open an account" CTA is dropped on phones to keep the header compact;
-   registration is still reachable from the landing page body. */
+/* The "Open an account" CTA and the header "Sign in" link are dropped on
+   phones to keep the header compact; both remain reachable from the landing
+   page body (hero actions) and the minimal headers keep their own Sign in. */
 @media (max-width: 899px) {
-  .site-header__actions .site-header__cta {
+  .site-header__actions .site-header__cta,
+  .site-header__actions .site-header__signin {
     display: none;
   }
 }

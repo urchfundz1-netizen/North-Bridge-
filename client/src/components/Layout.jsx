@@ -398,7 +398,7 @@ export function PublicHeader({ minimal = false }) {
             </nav>
             <div className="site-header__actions">
               <TranslateWidget />
-              <NavLink to="/login" className="btn btn--sm btn--onDark">
+              <NavLink to="/login" className="btn btn--sm btn--onDark site-header__signin">
                 Sign in
               </NavLink>
               <NavLink to="/register" className="btn btn--sm btn--accent site-header__cta">
