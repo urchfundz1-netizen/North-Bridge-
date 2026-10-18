@@ -600,6 +600,13 @@ table {
   flex: 0 0 96px;
 }
 
+/* Admin's bar has no raised centre button, so the notch cut-out and the
+   middle spacer would leave a hole; render a plain rounded surface instead. */
+.bottom-nav--no-fab .bottom-nav__bar::before {
+  -webkit-mask: none;
+  mask: none;
+}
+
 .bottom-nav__fab {
   position: absolute;
   left: 50%;

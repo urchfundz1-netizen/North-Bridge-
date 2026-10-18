@@ -55,7 +55,9 @@ const CUSTOMER_PRIMARY = [
 const ADMIN_PRIMARY = [
   { to: '/admin', label: 'Overview', icon: IconChart, end: true },
   { to: '/admin/customers', label: 'Customers', icon: IconUsers },
-  { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer, fab: true },
+  // Off the phone's bottom bar (it was the raised centre button) but still in
+  // the desktop header; the overview tiles deep-link into it as well.
+  { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer, hideOnBottomNav: true },
   { to: '/admin/banks', label: 'Banks', icon: IconBank },
   // The one-time code a customer needs to finish signing in lives here.
   { to: '/admin/otp', label: 'Sign-in codes', icon: IconShield },
@@ -312,8 +314,8 @@ function ConfirmDialogWrapper({ open, onClose, onConfirm }) {
  * evenly on either side.
  */
 function BottomNav({ links }) {
+  const tabs = links.filter((link) => !link.fab && !link.hideOnBottomNav);
   const fab = links.find((link) => link.fab);
-  const tabs = links.filter((link) => !link.fab);
   const left = tabs.slice(0, Math.ceil(tabs.length / 2));
   const right = tabs.slice(Math.ceil(tabs.length / 2));
 
@@ -330,10 +332,10 @@ function BottomNav({ links }) {
   );
 
   return (
-    <nav className="bottom-nav" aria-label="Primary">
+    <nav className={`bottom-nav${fab ? '' : ' bottom-nav--no-fab'}`} aria-label="Primary">
       <div className="bottom-nav__bar">
         {left.map(renderItem)}
-        <span className="bottom-nav__gap" aria-hidden="true" />
+        {fab ? <span className="bottom-nav__gap" aria-hidden="true" /> : null}
         {right.map(renderItem)}
 
         {fab ? (
