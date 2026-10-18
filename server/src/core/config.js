@@ -16,28 +16,35 @@ export const REPO_ROOT = resolve(SERVER_ROOT, '..');
 
 /** Minimal .env loader - avoids a dependency for ~20 lines of work. */
 function loadEnvFile() {
-  const envPath = resolve(REPO_ROOT, '.env');
-  let raw;
-  try {
-    raw = readFileSync(envPath, 'utf8');
-  } catch {
-    return;
-  }
-  for (const rawLine of raw.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+  // Render mounts "Secret Files" at /etc/secrets; NB_ENV_FILE lets another
+  // host point at its own file. Real environment variables always win.
+  const candidates = [resolve(REPO_ROOT, '.env')];
+  if (process.env.NB_ENV_FILE) candidates.push(process.env.NB_ENV_FILE);
+  candidates.push('/etc/secrets/northbridge.env');
+
+  for (const envPath of candidates) {
+    let raw;
+    try {
+      raw = readFileSync(envPath, 'utf8');
+    } catch {
+      continue;
     }
-    // Real environment variables always win over the .env file.
-    if (process.env[key] === undefined) process.env[key] = value;
+    for (const rawLine of raw.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq === -1) continue;
+      const key = line.slice(0, eq).trim();
+      let value = line.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      // Real environment variables always win over the .env file.
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
   }
 }
 
