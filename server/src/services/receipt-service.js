@@ -87,10 +87,12 @@ function buildPayload(transfer, { receiptNumber, issuedAt }) {
     recipient: {
       name: transfer.recipient_name,
       accountNumber: transfer.recipient_account_number,
+      accountName: transfer.recipient_account_name ?? null,
       bank: transfer.recipient_bank_name,
       routingNumber: transfer.recipient_routing_number,
       iban: transfer.recipient_iban,
       swiftBic: transfer.recipient_swift_bic,
+      cnaps: transfer.recipient_cnaps ?? null,
       country: transfer.recipient_country,
     },
     amounts: {

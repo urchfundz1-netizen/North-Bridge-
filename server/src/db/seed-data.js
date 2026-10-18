@@ -43,6 +43,16 @@ export const STARTER_BANKS = [
   { name: 'Shinsei Commercial Bank', code: 'SHNS', country: 'Japan', routing: 4, local: 0, intl: 1, wire: 1 },
   { name: 'Aurora Pacific Bank', code: 'AUPB', country: 'Australia', routing: 6, local: 0, intl: 1, wire: 1 },
   { name: 'Sahara Trade Finance Bank', code: 'SHTF', country: 'United Arab Emirates', routing: 3, local: 0, intl: 1, wire: 1 },
+  { name: 'Bank of China', code: 'BKCH', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'ICBC', code: 'ICBC', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'China Construction Bank', code: 'PCBC', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'Agricultural Bank of China', code: 'ABOC', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'Bank of Communications', code: 'COMM', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'China Merchants Bank', code: 'CMBC', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'China CITIC Bank', code: 'CIBK', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'China Everbright Bank', code: 'EVER', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'Ping An Bank', code: 'SZDB', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
+  { name: 'Industrial Bank', code: 'FJIB', country: 'China', routing: 0, local: 1, intl: 1, wire: 1 },
 ];
 
 /** Insert any missing setting keys. Existing values always win. */

@@ -27,6 +27,8 @@ import {
   snapRows,
   coll,
   transaction,
+  countOf,
+  sumOf,
 } from '../db/firestore.js';
 import { badRequest, conflict, forbidden, notFound, validationFailed } from '../core/errors.js';
 import { generateTransferReference, generateIdempotencyKey } from '../core/identifiers.js';
@@ -39,8 +41,10 @@ import { AUDIT_ACTIONS, recordAudit } from './audit.js';
 
 export const TRANSFER_TYPES = ['local', 'international', 'wire'];
 
+// Each entry may be an array, meaning "any one of these satisfies the rule" —
+// a local transfer needs a routing number or a CNAPS code.
 const TYPE_REQUIREMENTS = {
-  local: ['recipientRoutingNumber'],
+  local: [['recipientRoutingNumber', 'recipientCnaps']],
   international: ['recipientCountry'],
   wire: ['recipientRoutingNumber', 'recipientSwiftBic'],
 };
@@ -124,16 +128,27 @@ export async function prepareTransfer(input, { customerId, customerStatus, isBal
     throw validationFailed({ recipientIban: 'Enter a valid IBAN (15-34 letters and digits).' });
   }
 
+  const cnaps = normalizeIdentifier(input.recipientCnaps);
+  if (cnaps && !/^[A-Za-z0-9]{3,20}$/.test(cnaps)) {
+    throw validationFailed({ recipientCnaps: 'Enter a valid CNAPS code (3-20 letters and digits).' });
+  }
+
   const required = TYPE_REQUIREMENTS[transferType] ?? [];
   for (const field of required) {
-    const value = input[field];
-    if (!value || !String(value).trim()) {
+    const alternatives = Array.isArray(field) ? field : [field];
+    const satisfied = alternatives.some((name) => input[name] && String(input[name]).trim());
+    if (!satisfied) {
       const labels = {
         recipientRoutingNumber: 'a routing number',
         recipientCountry: 'a destination country',
         recipientSwiftBic: 'a SWIFT / BIC code',
+        recipientCnaps: 'a CNAPS code',
       };
-      throw validationFailed({ [field]: `${transferType} transfers require ${labels[field]}.` });
+      const message =
+        alternatives.length > 1
+          ? `${transferType} transfers require ${alternatives.map((name) => labels[name]).join(' or ')}.`
+          : `${transferType} transfers require ${labels[alternatives[0]]}.`;
+      throw validationFailed({ [alternatives[0]]: message });
     }
   }
 
@@ -155,6 +170,8 @@ export async function prepareTransfer(input, { customerId, customerStatus, isBal
     recipientRoutingNumber: routing || null,
     recipientIban: iban || null,
     recipientSwiftBic: (input.recipientSwiftBic ?? '').trim() || null,
+    recipientCnaps: cnaps || null,
+    recipientAccountName: (input.recipientAccountName ?? '').trim() || null,
     recipientCountry: (input.recipientCountry ?? bank.country).trim(),
     description: (input.description ?? '').trim(),
     requiresApproval: rules.requireApproval,
@@ -312,6 +329,8 @@ export async function createTransfer({ customer, prepared, idempotencyKey, reque
       recipient_routing_number: prepared.recipientRoutingNumber,
       recipient_iban: prepared.recipientIban,
       recipient_swift_bic: prepared.recipientSwiftBic,
+      recipient_cnaps: prepared.recipientCnaps,
+      recipient_account_name: prepared.recipientAccountName,
       recipient_country: prepared.recipientCountry,
       amount_cents: prepared.amountCents,
       fee_cents: prepared.feeCents,
@@ -627,12 +646,21 @@ export async function listTransfers({ status, search, limit = 20, offset = 0 } =
 
   const base = coll(C.transfers);
   const query = status && status !== 'all' ? base.where('status', '==', status) : base;
-  const snap = await query.get();
-  let rows = snapRows(snap);
+  let rows = snapRows(await query.get());
 
-  rows = await Promise.all(rows.map((row) => decorateWithCustomer(row)));
+  const sortRows = (list) =>
+    list.sort((a, b) => {
+      const pendingA = a.status === 'pending' ? 1 : 0;
+      const pendingB = b.status === 'pending' ? 1 : 0;
+      if (pendingA !== pendingB) return pendingB - pendingA;
+      if (a.requested_at === b.requested_at) return b.id - a.id;
+      return a.requested_at < b.requested_at ? 1 : -1;
+    });
 
   if (search) {
+    // The searchable customer fields only exist after decoration, so a search
+    // still decorates the (status-narrowed) match set before filtering.
+    rows = await Promise.all(rows.map((row) => decorateWithCustomer(row)));
     const needle = String(search).toLowerCase();
     rows = rows.filter((row) =>
       [
@@ -645,46 +673,41 @@ export async function listTransfers({ status, search, limit = 20, offset = 0 } =
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle)),
     );
+    sortRows(rows);
+    const total = rows.length;
+    return { rows: rows.slice(offset, offset + limit), total };
   }
 
-  rows.sort((a, b) => {
-    const pendingA = a.status === 'pending' ? 1 : 0;
-    const pendingB = b.status === 'pending' ? 1 : 0;
-    if (pendingA !== pendingB) return pendingB - pendingA;
-    if (a.requested_at === b.requested_at) return b.id - a.id;
-    return a.requested_at < b.requested_at ? 1 : -1;
-  });
-
+  sortRows(rows);
   const total = rows.length;
-  return { rows: rows.slice(offset, offset + limit), total };
+  const page = rows.slice(offset, offset + limit);
+  // Decorate only the rows on this page - one customer read per row shown,
+  // rather than one per transfer in the collection on every page load.
+  const decorated = await Promise.all(page.map((row) => decorateWithCustomer(row)));
+  return { rows: decorated, total };
 }
 
 /** Counts for the admin dashboard. */
 export async function transferStats() {
-  const snap = await coll(C.transfers).get();
-  const stats = {
-    pending: 0,
-    approved: 0,
-    rejected: 0,
-    cancelled: 0,
-    pending_value_cents: 0,
-    settled_value_cents: 0,
+  const transfers = coll(C.transfers);
+  const withStatus = (status) => transfers.where('status', '==', status);
+  const [pending, approved, rejected, cancelled, pendingValueCents, settledValueCents] =
+    await Promise.all([
+      countOf(withStatus('pending')),
+      countOf(withStatus('approved')),
+      countOf(withStatus('rejected')),
+      countOf(withStatus('cancelled')),
+      sumOf(withStatus('pending'), 'total_debit_cents'),
+      sumOf(withStatus('approved'), 'amount_cents'),
+    ]);
+  return {
+    pending,
+    approved,
+    rejected,
+    cancelled,
+    pending_value_cents: pendingValueCents,
+    settled_value_cents: settledValueCents,
   };
-  snap.forEach((doc) => {
-    const t = doc.data();
-    if (t.status === 'pending') {
-      stats.pending += 1;
-      stats.pending_value_cents += t.total_debit_cents ?? 0;
-    } else if (t.status === 'approved') {
-      stats.approved += 1;
-      stats.settled_value_cents += t.amount_cents ?? 0;
-    } else if (t.status === 'rejected') {
-      stats.rejected += 1;
-    } else if (t.status === 'cancelled') {
-      stats.cancelled += 1;
-    }
-  });
-  return stats;
 }
 
 /** Whether the customer currently has enough for `totalDebitCents`. */

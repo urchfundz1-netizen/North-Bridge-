@@ -18,6 +18,7 @@ import { updateOwnProfile, findCustomerById } from '../services/customer-service
 import { listEntries, summarise } from '../services/ledger-service.js';
 import { bankingRules } from '../services/settings.js';
 import { listBanks, findBankById } from '../services/bank-service.js';
+import { findBeneficiaryByAccountNumber } from '../services/beneficiary-directory.js';
 import { listCustomerTransfers } from '../services/transfer-service.js';
 import { listCustomerReceipts } from '../services/receipt-service.js';
 import { recordAudit, AUDIT_ACTIONS } from '../services/audit.js';
@@ -196,6 +197,44 @@ router.get(
         code: bank.code,
         country: bank.country,
         routingNumberLength: bank.routing_number_length,
+      },
+    });
+  }),
+);
+
+/* -------------------------------------------------------------------------- */
+/* Beneficiary directory                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Resolve a hardcoded beneficiary account number. Used by the transfer form to
+ * auto-fill recipient details; unknown numbers come back as `found: false` and
+ * the form stays manual.
+ */
+router.get(
+  '/beneficiaries/lookup',
+  asyncHandler(async (req, res) => {
+    const raw = typeof req.query.accountNumber === 'string' ? req.query.accountNumber.trim() : '';
+    if (raw.length < 3 || raw.length > 34) {
+      throw badRequest('Enter a valid account number.');
+    }
+
+    const match = findBeneficiaryByAccountNumber(raw);
+    if (!match) {
+      res.json({ found: false, beneficiary: null });
+      return;
+    }
+
+    res.json({
+      found: true,
+      beneficiary: {
+        accountNumber: match.accountNumber,
+        accountName: match.accountName,
+        beneficiaryName: match.beneficiaryName,
+        bankName: match.bankName,
+        cnapsCode: match.cnapsCode,
+        swiftBic: match.swiftBic,
+        country: match.country,
       },
     });
   }),

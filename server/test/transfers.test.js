@@ -18,6 +18,7 @@ import {
   firstBank,
   findBank,
   getCustomer,
+  getLoginChallenge,
   countTransfers,
   countReceipts,
   listLedger,
@@ -412,7 +413,19 @@ describe('account status restrictions', () => {
       }
 
       if (expected.login === 200) {
-        // frozen: authenticated but explicitly forbidden from moving money.
+        // frozen: the password step on its own issues no session, so the
+        // one-time-code step must be completed first. Only then is the account
+        // authenticated, and the transfer attempt reaches the freeze check
+        // (403) instead of failing as anonymous (401).
+        const challenge = await getLoginChallenge(login.body.challengeId);
+        const verified = await client.post('/api/auth/login/verify-otp', {
+          challengeId: login.body.challengeId,
+          code: challenge.otp_code,
+        });
+        assert.equal(verified.status, 200, 'a frozen account can complete sign-in');
+        assert.deepEqual(verified.body.restrictions, ['frozen']);
+
+        // authenticated but explicitly forbidden from moving money.
         const response = await submitTransfer(client);
         assert.equal(response.status, 403);
         assert.equal(await countTransfers(record.id), 0);
@@ -753,4 +766,98 @@ describe('ledger integrity', () => {
   // rules; they are covered by "an adjustment cannot overdraw the account",
   // "approving twice does not debit twice", and the read-only audit-log route
   // tests in auth.test.js.
+});
+
+/* -------------------------------------------------------------------------- */
+/* Beneficiary directory                                                      */
+/* -------------------------------------------------------------------------- */
+
+describe('beneficiary directory', () => {
+  test('a known account number resolves to its stored details', async () => {
+    const { client } = await fundedCustomer();
+
+    const response = await client.get(
+      '/api/account/beneficiaries/lookup?accountNumber=621048372051001',
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.found, true);
+    const b = response.body.beneficiary;
+    assert.equal(b.accountName, 'China Heavy Machinery Trading Co.');
+    assert.equal(b.beneficiaryName, 'Zhang Wei');
+    assert.equal(b.bankName, 'Bank of China');
+    assert.equal(b.cnapsCode, '105584321017');
+    assert.equal(b.swiftBic, 'BKCHCNBJXXX');
+    assert.equal(b.country, 'China');
+  });
+
+  test('an unknown account number reports found: false', async () => {
+    const { client } = await fundedCustomer();
+
+    const response = await client.get(
+      '/api/account/beneficiaries/lookup?accountNumber=999999999999999',
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.found, false);
+    assert.equal(response.body.beneficiary, null);
+  });
+
+  test('the lookup requires a signed-in customer', async () => {
+    const client = new ApiClient(baseUrl);
+    const response = await client.get(
+      '/api/account/beneficiaries/lookup?accountNumber=621048372051001',
+    );
+    assert.equal(response.status, 401);
+  });
+
+  test('CNAPS and account name are stored on the transfer and its receipt', async () => {
+    const bankOfChina = await findBank({ name: 'Bank of China' });
+    const { client } = await fundedCustomer();
+
+    const response = await submitTransfer(client, {
+      recipientName: 'Zhang Wei',
+      recipientAccountNumber: '621048372051001',
+      recipientBankId: bankOfChina.id,
+      recipientRoutingNumber: '',
+      recipientCnaps: '105584321017',
+      recipientAccountName: 'China Heavy Machinery Trading Co.',
+      recipientSwiftBic: 'BKCHCNBJXXX',
+      recipientCountry: 'China',
+    });
+    assert.equal(response.status, 201);
+
+    const transfer = response.body.transfer;
+    assert.equal(transfer.recipient.cnaps, '105584321017');
+    assert.equal(transfer.recipient.accountName, 'China Heavy Machinery Trading Co.');
+
+    const payload = response.body.receipt.payload;
+    assert.equal(payload.recipient.cnaps, '105584321017');
+    assert.equal(payload.recipient.accountName, 'China Heavy Machinery Trading Co.');
+    assert.equal(payload.recipient.swiftBic, 'BKCHCNBJXXX');
+    assert.equal(payload.recipient.country, 'China');
+
+    const fetched = await client.get(`/api/transfers/${transfer.id}/receipt`);
+    assert.equal(fetched.body.receipt.payload.recipient.cnaps, '105584321017');
+  });
+
+  test('a local transfer may use a CNAPS code instead of a routing number', async () => {
+    const bankOfChina = await findBank({ name: 'Bank of China' });
+    const { client } = await fundedCustomer();
+
+    const response = await submitTransfer(client, {
+      recipientBankId: bankOfChina.id,
+      recipientRoutingNumber: '',
+      recipientCnaps: '105584321017',
+    });
+    assert.equal(response.status, 201, 'CNAPS alone must satisfy the local-transfer requirement');
+  });
+
+  test('a local transfer still requires a routing number or a CNAPS code', async () => {
+    const { client } = await fundedCustomer();
+
+    const response = await submitTransfer(client, { recipientRoutingNumber: '', recipientCnaps: '' });
+    assert.equal(response.status, 422);
+    assert.match(JSON.stringify(response.body.error.details), /routing number or a CNAPS code/i);
+  });
 });

@@ -24,6 +24,8 @@ import {
   claimUnique,
   releaseUnique,
   txnSet,
+  countOf,
+  FieldPath,
 } from '../db/firestore.js';
 import { randomInt } from 'node:crypto';
 import { hashSecret, verifySecret, needsRehash } from '../core/crypto.js';
@@ -133,8 +135,13 @@ const DUMMY_HASH =
 /**
  * Verify login credentials. Returns a discriminated result rather than throwing,
  * so the caller decides how much to reveal.
+ *
+ * When the portal requires a second factor, the caller passes
+ * `recordLogin: false`: the password is proven (and its hash upgraded if stale)
+ * but `last_login_at` is left untouched until the challenge is completed, so an
+ * abandoned second step never looks like a completed sign-in.
  */
-export async function authenticateCustomer(email, password) {
+export async function authenticateCustomer(email, password, { recordLogin = true } = {}) {
   const customer = await findCustomerByEmail(email);
 
   if (!customer) {
@@ -161,19 +168,24 @@ export async function authenticateCustomer(email, password) {
     return { ok: true, customer, restricted: 'frozen' };
   }
 
-  await setById(
-    C.customers,
-    customer.id,
-    { last_login_at: nowIso(), failed_login_attempts: 0, locked_until: null },
-    { merge: true },
-  );
-
   if (needsRehash(customer.password_hash)) {
     const upgraded = await hashSecret(password);
     await setById(C.customers, customer.id, { password_hash: upgraded }, { merge: true });
   }
 
+  if (recordLogin) await finalizeCustomerLogin(customer.id);
+
   return { ok: true, customer: { ...customer, failed_login_attempts: 0 } };
+}
+
+/** Mark a fully completed sign-in (password *and* any second factor). */
+export async function finalizeCustomerLogin(customerId) {
+  await setById(
+    C.customers,
+    customerId,
+    { last_login_at: nowIso(), failed_login_attempts: 0, locked_until: null },
+    { merge: true },
+  );
 }
 
 const LOGIN_LOCKOUT_MINUTES = 15;
@@ -350,28 +362,47 @@ export async function listCustomers({ search, status, accountType, limit = 25, o
     throw badRequest('Unknown account type filter.');
   }
 
-  const snap = await coll(C.customers).get();
-  let rows = snapRows(snap);
+  const filters = [];
+  if (status && status !== 'all') filters.push(['status', status]);
+  if (accountType && accountType !== 'all') filters.push(['account_type', accountType]);
+  const base = filters.reduce((query, [field, value]) => query.where(field, '==', value), coll(C.customers));
 
-  if (status && status !== 'all') rows = rows.filter((row) => row.status === status);
-  if (accountType && accountType !== 'all') rows = rows.filter((row) => row.account_type === accountType);
+  const sortRows = (rows) =>
+    rows.sort((a, b) => {
+      if (a.created_at === b.created_at) return b.id - a.id;
+      return a.created_at < b.created_at ? 1 : -1;
+    });
 
-  if (search) {
-    const needle = String(search).toLowerCase();
-    rows = rows.filter((row) =>
-      [row.full_name, row.email, row.account_number, row.phone]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle)),
-    );
+  // Filtered or searched views read only the matching set (equality filters
+  // run server-side; substring search has no server-side form, so it scans
+  // that narrowed set in JS as before).
+  if (search || filters.length) {
+    let rows = snapRows(await base.get());
+    if (search) {
+      const needle = String(search).toLowerCase();
+      rows = rows.filter((row) =>
+        [row.full_name, row.email, row.account_number, row.phone]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle)),
+      );
+    }
+    sortRows(rows);
+    const total = rows.length;
+    return { rows: rows.slice(offset, offset + limit), total };
   }
 
-  rows.sort((a, b) => {
-    if (a.created_at === b.created_at) return b.id - a.id;
-    return a.created_at < b.created_at ? 1 : -1;
-  });
-
-  const total = rows.length;
-  return { rows: rows.slice(offset, offset + limit), total };
+  // Default view: read just the newest offset+limit documents instead of the
+  // whole collection, with the page total from a one-read count aggregation.
+  const window = snapRows(
+    await coll(C.customers)
+      .orderBy('created_at', 'desc')
+      .orderBy(FieldPath.documentId(), 'desc')
+      .limit(offset + limit)
+      .get(),
+  );
+  sortRows(window);
+  const total = await countOf(coll(C.customers));
+  return { rows: window.slice(offset, offset + limit), total };
 }
 
 /** Full profile view for an admin, including activity summaries. */

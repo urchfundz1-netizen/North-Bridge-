@@ -215,11 +215,28 @@ export class ApiClient {
   }
 
   async loginCustomer(email, password) {
-    const response = await this.post('/api/auth/login', { email, password });
-    if (response.status !== 200) {
-      throw new Error(`loginCustomer failed: ${response.status} ${JSON.stringify(response.body)}`);
+    const started = await this.post('/api/auth/login', { email, password });
+    if (started.status !== 200) {
+      throw new Error(`loginCustomer failed: ${started.status} ${JSON.stringify(started.body)}`);
     }
-    return response.body;
+
+    // Sign-in is two-step: the password step returns a challenge, and the code
+    // reserved for it must be supplied before a session is issued. With no
+    // email provider wired up, the code only exists in Firestore, so read it
+    // back from the challenge document - exactly what the admin console does.
+    const challenge = await getById(C.loginChallenges, started.body.challengeId);
+    if (!challenge) {
+      throw new Error(`loginCustomer: no challenge recorded for ${started.body.challengeId}`);
+    }
+
+    const verified = await this.post('/api/auth/login/verify-otp', {
+      challengeId: started.body.challengeId,
+      code: challenge.otp_code,
+    });
+    if (verified.status !== 200) {
+      throw new Error(`loginCustomer OTP failed: ${verified.status} ${JSON.stringify(verified.body)}`);
+    }
+    return verified.body;
   }
 
   async loginAdmin(email = 'admin@northbridge.bank', password = 'AdminPass#2024') {
@@ -349,6 +366,7 @@ export const getCustomer = (id) => getById(C.customers, id);
 export const getAdmin = (id) => getById(C.admins, id);
 export const getTransfer = (id) => getById(C.transfers, id);
 export const getBank = (id) => getById(C.banks, id);
+export const getLoginChallenge = (id) => getById(C.loginChallenges, id);
 
 export function updateCustomer(id, patch) {
   return setById(C.customers, id, patch, { merge: true });

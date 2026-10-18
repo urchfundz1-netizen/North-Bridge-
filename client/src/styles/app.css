@@ -113,8 +113,7 @@
 
   /* ---- Layout --------------------------------------------------------- */
   --header-h: 56px;
-  --subnav-h: 48px;
-  --bottomnav-h: 60px;
+  --bottomnav-h: 84px;
   --container-max: 1200px;
 
   /* ---- Motion --------------------------------------------------------- */
@@ -127,7 +126,6 @@
 @media (min-width: 900px) {
   :root {
     --header-h: 68px;
-    --subnav-h: 52px;
   }
 }
 
@@ -364,10 +362,6 @@ table {
   padding-top: var(--header-h);
 }
 
-.app-main--with-subnav {
-  padding-top: calc(var(--header-h) + var(--subnav-h));
-}
-
 /* Space for the fixed mobile bottom navigation. */
 @media (max-width: 899px) {
   .app-main--with-bottomnav {
@@ -501,6 +495,14 @@ table {
   gap: var(--space-2);
 }
 
+/* The "Open an account" CTA is dropped on phones to keep the header compact;
+   registration is still reachable from the landing page body. */
+@media (max-width: 899px) {
+  .site-header__actions .site-header__cta {
+    display: none;
+  }
+}
+
 .header-badge {
   display: none;
   padding: 2px var(--space-2);
@@ -519,86 +521,18 @@ table {
 }
 
 /* ==========================================================================
-   Sub-navigation (fixed under the header)
-   ========================================================================== */
-
-.subnav {
-  position: fixed;
-  inset: var(--header-h) 0 auto 0;
-  z-index: 80;
-  height: var(--subnav-h);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-xs);
-}
-
-.subnav__scroll {
-  height: 100%;
-  display: flex;
-  align-items: stretch;
-  gap: var(--space-1);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-overflow-scrolling: touch;
-}
-
-.subnav__scroll::-webkit-scrollbar {
-  display: none;
-}
-
-.subnav__link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--ink-600);
-  white-space: nowrap;
-  border-bottom: 2px solid transparent;
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.subnav__link:hover {
-  color: var(--navy-700);
-  text-decoration: none;
-}
-
-.subnav__link.is-active {
-  color: var(--navy-700);
-  border-bottom-color: var(--navy-700);
-  font-weight: 600;
-}
-
-.subnav__count {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--danger-600);
-  color: var(--white);
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-grid;
-  place-items: center;
-}
-
-/* ==========================================================================
    Mobile bottom navigation (fixed)
+   A floating white bar with a circular notch cut out of the top-center and a
+   raised circular Transfer action button sitting in the notch.
    ========================================================================== */
 
 .bottom-nav {
   position: fixed;
   inset: auto 0 0 0;
   z-index: 90;
-  height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -2px 10px rgba(13, 21, 36, 0.07);
   display: flex;
-  align-items: stretch;
+  justify-content: center;
+  pointer-events: none;
 }
 
 @media (min-width: 900px) {
@@ -607,63 +541,101 @@ table {
   }
 }
 
+.bottom-nav__bar {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: calc(84px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  pointer-events: auto;
+}
+
+/* White bar with a circular notch cut out for the center button. */
+.bottom-nav__bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  -webkit-mask: radial-gradient(circle 46px at 50% 0, transparent 98%, #000 100%);
+  mask: radial-gradient(circle 46px at 50% 0, transparent 98%, #000 100%);
+  filter: drop-shadow(0 -2px 8px rgba(0, 0, 0, 0.05));
+}
+
 .bottom-nav__item {
+  position: relative;
   flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
+  gap: 6px;
   color: var(--ink-500);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  padding-block: var(--space-1);
-  position: relative;
-  /* Comfortable touch target on small phones. */
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
   min-height: 48px;
 }
 
 .bottom-nav__item:hover {
   text-decoration: none;
+  color: var(--ink-700);
 }
 
 .bottom-nav__item.is-active {
-  color: var(--navy-700);
-}
-
-.bottom-nav__item.is-active::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 28px;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: var(--navy-700);
+  color: var(--ink-900);
+  font-weight: 600;
 }
 
 .bottom-nav__icon {
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
 }
 
-.bottom-nav__dot {
+/* Empty space in the middle so tabs sit either side of the FAB. */
+.bottom-nav__gap {
+  flex: 0 0 96px;
+}
+
+.bottom-nav__fab {
   position: absolute;
-  top: 6px;
-  right: calc(50% - 18px);
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+  left: 50%;
+  top: -10px;
+  transform: translateX(-50%);
+  width: 72px;
+  height: 72px;
   border-radius: var(--radius-full);
-  background: var(--danger-600);
+  background: var(--navy-700);
   color: var(--white);
-  font-size: 10px;
-  font-weight: 700;
   display: grid;
   place-items: center;
-  border: 2px solid var(--surface);
+  box-shadow: 0 10px 24px rgba(11, 42, 91, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bottom-nav__fab:hover {
+  text-decoration: none;
+  transform: translateX(-50%) scale(1.05);
+}
+
+.bottom-nav__fab:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
+.bottom-nav__fab.is-active {
+  background: var(--navy-800);
+}
+
+.bottom-nav__fab svg {
+  width: 30px;
+  height: 30px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav__fab {
+    transition: none;
+  }
 }
 
 /* ==========================================================================
@@ -1152,7 +1124,7 @@ a.card-summary__item:focus-visible {
 .select:disabled,
 .textarea:disabled {
   background: var(--surface-muted);
-  color: var(--ink-500);
+  color: var(--ink-800);
   cursor: not-allowed;
 }
 
@@ -1163,6 +1135,59 @@ a.card-summary__item:focus-visible {
 
 .input[aria-invalid="true"]:focus {
   box-shadow: 0 0 0 3px rgba(192, 38, 38, 0.15);
+}
+
+/* Input with a leading icon and/or a trailing control (e.g. password reveal).
+   The wrapper is the positioning context; both adornments are absolute so the
+   input keeps filling the row. */
+.field-control {
+  position: relative;
+  display: block;
+}
+
+.field-control__icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  transform: translateY(-50%);
+  color: var(--ink-400);
+  pointer-events: none;
+}
+
+.input--icon {
+  padding-left: 42px;
+}
+
+.input--trailing {
+  padding-right: 46px;
+}
+
+.secret-toggle--inline {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-500);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.secret-toggle--inline:hover {
+  background: var(--surface-muted);
+  text-decoration: none;
+}
+
+.secret-toggle--inline:focus-visible {
+  outline: 2px solid var(--navy-600);
+  outline-offset: 2px;
 }
 
 .textarea {
@@ -1535,6 +1560,147 @@ a.card-summary__item:focus-visible {
 }
 
 /* ==========================================================================
+   Payment card
+   A physical-card-shaped panel: navy gradient face, EMV chip, embossed number
+   and holder/expiry along the bottom edge.
+   ========================================================================== */
+
+.payment-card {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1.586 / 1;
+  max-width: 420px;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, var(--navy-700) 0%, var(--navy-800) 55%, var(--navy-900) 100%);
+  color: var(--white);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Soft highlight arc, decorative only. */
+.payment-card::after {
+  content: "";
+  position: absolute;
+  right: -70px;
+  top: -90px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+
+.payment-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.payment-card__brand {
+  font-size: var(--text-lg);
+}
+
+.payment-card__logo {
+  opacity: 0.9;
+}
+
+.payment-card__chip {
+  width: 46px;
+  height: 34px;
+  margin-top: auto;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f2d38a 0%, #d9b25c 45%, #f2d38a 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+  position: relative;
+}
+
+.payment-card__chip::before,
+.payment-card__chip::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.payment-card__chip::before { top: 11px; }
+.payment-card__chip::after { top: 22px; }
+
+.payment-card__number {
+  margin-top: var(--space-4);
+  font-size: clamp(1.15rem, 4.5vw, 1.6rem);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.payment-card__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.payment-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.payment-card__field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  opacity: 0.7;
+}
+
+.payment-card__field-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-number-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-number-row__toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-600);
+  cursor: pointer;
+}
+
+.card-number-row__toggle:hover {
+  color: var(--navy-700);
+  border-color: var(--navy-500);
+}
+
+.card-number-row__toggle:focus-visible {
+  outline: 2px solid var(--navy-500);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
    Stat tiles
    ========================================================================== */
 
@@ -1878,7 +2044,6 @@ button.stat:hover {
 /* Print: hide the app chrome and render the receipt on its own page. */
 @media print {
   .site-header,
-  .subnav,
   .bottom-nav,
   .no-print {
     display: none !important;
@@ -1925,6 +2090,9 @@ button.stat:hover {
    ========================================================================== */
 
 .auth-layout {
+  /* Fills the app shell so the panel's background reaches the bottom of the
+     viewport instead of leaving a strip of page colour under it. */
+  flex: 1 1 auto;
   min-height: calc(100vh - var(--header-h));
   min-height: calc(100dvh - var(--header-h));
   display: grid;
@@ -1938,11 +2106,18 @@ button.stat:hover {
 }
 
 .auth-panel {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: var(--space-6) var(--space-4);
-  background: var(--surface);
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-4) var(--space-10);
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--navy-50) 0%, transparent 55%),
+    radial-gradient(120% 120% at 0% 100%, var(--accent-100) 0%, transparent 55%),
+    var(--surface);
 }
 
 @media (min-width: 640px) {
@@ -1951,9 +2126,207 @@ button.stat:hover {
   }
 }
 
+@media (min-width: 1000px) {
+  .auth-panel {
+    /* The brand aside carries the identity on wide screens. */
+    background: var(--surface);
+  }
+}
+
+/* Mobile-only wordmark, hidden once the brand aside appears. */
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--ink-900);
+}
+
+.auth-brand__name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.auth-brand__tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  opacity: 0.6;
+  font-weight: 600;
+  color: var(--ink-600);
+}
+
+@media (min-width: 1000px) {
+  .auth-brand {
+    display: none;
+  }
+}
+
 .auth-card {
   width: 100%;
   max-width: 420px;
+}
+
+.auth-card__title {
+  font-size: var(--text-2xl);
+  letter-spacing: -0.02em;
+}
+
+/* On phones and tablets the form sits on its own card so it reads as a single
+   focused task rather than fields floating on the page. */
+@media (max-width: 999px) {
+  .auth-card {
+    padding: var(--space-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+@media (max-width: 380px) {
+  .auth-card {
+    padding: var(--space-5);
+  }
+}
+
+/*
+ * Dark, glassy sign-in card. Applied on mobile only; the desktop split layout
+ * just above is intentionally left untouched. Scoped to `.auth-layout--dark`
+ * so other auth screens (register, admin) keep the light treatment.
+ */
+.auth-card__avatar {
+  display: none;
+}
+
+@media (max-width: 999px) {
+  .auth-layout--dark {
+    background:
+      radial-gradient(60% 50% at 50% 0%, #0b2a5c 0%, transparent 70%),
+      radial-gradient(50% 40% at 100% 100%, #0a2250 0%, transparent 70%),
+      #04122b;
+  }
+
+  .auth-layout--dark .auth-panel {
+    background: none;
+  }
+
+  .auth-layout--dark .auth-brand {
+    display: none;
+  }
+
+  .auth-layout--dark .auth-card {
+    max-width: 360px;
+    padding: 36px 28px 30px;
+    border-radius: 28px;
+    background: rgba(18, 52, 104, 0.55);
+    border: 1px solid rgba(120, 170, 255, 0.14);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    color: var(--white);
+  }
+
+  .auth-layout--dark .auth-card__avatar {
+    display: grid;
+    place-items: center;
+    width: 84px;
+    height: 84px;
+    margin: 0 auto var(--space-3);
+    border-radius: 50%;
+    background: rgba(70, 120, 200, 0.35);
+    color: #4a8de0;
+  }
+
+  .auth-layout--dark .auth-card__head {
+    text-align: center;
+  }
+
+  .auth-layout--dark .auth-card__title {
+    color: var(--white);
+  }
+
+  .auth-layout--dark .muted {
+    color: #b9c8e4;
+  }
+
+  .auth-layout--dark .subtle {
+    color: #8fa4cb;
+  }
+
+  .auth-layout--dark .field__label {
+    color: #b9c8e4;
+    margin-left: 4px;
+  }
+
+  .auth-layout--dark .input {
+    min-height: 48px;
+    border-color: transparent;
+    border-radius: 12px;
+    background: rgba(40, 84, 150, 0.38);
+    color: var(--white);
+  }
+
+  .auth-layout--dark .input::placeholder {
+    color: #8fa4cb;
+  }
+
+  .auth-layout--dark .input:hover:not(:disabled) {
+    border-color: transparent;
+    background: rgba(50, 100, 180, 0.45);
+  }
+
+  .auth-layout--dark .input:focus {
+    border-color: #6db0ff;
+    background: rgba(50, 100, 180, 0.5);
+    box-shadow: 0 0 0 3px rgba(90, 160, 255, 0.35), 0 0 18px rgba(90, 160, 255, 0.35);
+  }
+
+  .auth-layout--dark .field-control:focus-within .field-control__icon {
+    color: #6db0ff;
+  }
+
+  .auth-layout--dark .field-control .field-control__icon {
+    transition: color var(--dur-fast) var(--ease);
+  }
+
+  .auth-layout--dark .field-control__icon {
+    color: #e7efff;
+  }
+
+  .auth-layout--dark .secret-toggle--inline {
+    color: #e7efff;
+  }
+
+  .auth-layout--dark .secret-toggle--inline:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .auth-layout--dark .secret-toggle--inline:focus-visible {
+    outline-color: #5aa0ff;
+  }
+
+  .auth-layout--dark .field__error {
+    color: #ff9a9a;
+  }
+
+  .auth-layout--dark .btn--primary {
+    min-height: 48px;
+    border-radius: 12px;
+    background: #0a66e8;
+    font-size: var(--text-md);
+  }
+
+  .auth-layout--dark .btn--primary:hover:not(:disabled) {
+    background: #2178f5;
+  }
+
+  .auth-layout--dark a {
+    color: #9cc4ff;
+  }
 }
 
 .auth-aside {
@@ -2633,6 +3006,28 @@ button.stat:hover {
   background: var(--surface-muted);
   color: var(--ink-400);
   cursor: not-allowed;
+}
+
+/* A control that should read as an inline text link rather than a button. */
+.link-button {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  text-decoration: none;
+}
+
+.link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* ==========================================================================

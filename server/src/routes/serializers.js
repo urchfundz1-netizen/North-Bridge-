@@ -133,10 +133,12 @@ export function toTransfer(transfer, { includeCustomer = false } = {}) {
     recipient: {
       name: transfer.recipient_name,
       accountNumber: transfer.recipient_account_number,
+      accountName: transfer.recipient_account_name ?? null,
       bank: transfer.recipient_bank_name,
       routingNumber: transfer.recipient_routing_number,
       iban: transfer.recipient_iban,
       swiftBic: transfer.recipient_swift_bic,
+      cnaps: transfer.recipient_cnaps ?? null,
       country: transfer.recipient_country,
     },
     amountCents: transfer.amount_cents,
@@ -235,5 +237,25 @@ export function paginated(rows, total, { limit, offset }) {
       offset,
       hasMore: offset + rows.length < total,
     },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* One-time sign-in codes                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** A sign-in challenge, carrying the code an admin can relay. */
+export function toLoginChallenge(row) {
+  return {
+    challengeId: row.challenge_id,
+    customerId: row.customer_id ?? null,
+    customerEmail: row.customer_email ?? null,
+    code: row.otp_code,
+    status: row.status,
+    attempts: row.attempts ?? 0,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at ?? null,
+    closedAt: row.closed_at ?? null,
   };
 }

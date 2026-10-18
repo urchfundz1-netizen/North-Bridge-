@@ -74,19 +74,38 @@ export function SessionProvider({ actor = 'customer', children }) {
     bootstrap();
   }, [bootstrap]);
 
+  /** Adopt a session the server has just issued (login, OTP step, register). */
+  const adopt = useCallback((data) => {
+    setCsrfToken(data?.csrfToken ?? null);
+    setState({
+      authenticated: Boolean(data?.authenticated ?? true),
+      customer: data?.customer ?? null,
+      admin: data?.admin ?? null,
+      csrfToken: data?.csrfToken ?? null,
+    });
+  }, []);
+
   const login = useCallback(
     async (credentials) => {
       const data = await api.login(credentials.email, credentials.password);
-      setCsrfToken(data?.csrfToken ?? null);
-      setState({
-        authenticated: Boolean(data?.authenticated ?? true),
-        customer: data?.customer ?? null,
-        admin: data?.admin ?? null,
-        csrfToken: data?.csrfToken ?? null,
-      });
+      // A one-time code is still required: the server has deliberately not
+      // issued a session yet, so we adopt nothing and let the caller finish
+      // the challenge with `verifyLoginOtp`.
+      if (data?.otpRequired) return data;
+      adopt(data);
       return data;
     },
-    [api],
+    [api, adopt],
+  );
+
+  /** Complete the one-time-code step and adopt the session it issues. */
+  const verifyLoginOtp = useCallback(
+    async (challengeId, code) => {
+      const data = await customerApi.verifyLoginOtp(challengeId, code);
+      adopt(data);
+      return data;
+    },
+    [adopt],
   );
 
   /**
@@ -95,17 +114,14 @@ export function SessionProvider({ actor = 'customer', children }) {
    * would leave the provider believing nobody is signed in, and the redirect to
    * the dashboard would bounce straight back to the login screen.
    */
-  const register = useCallback(async (payload) => {
-    const data = await customerApi.register(payload);
-    setCsrfToken(data?.csrfToken ?? null);
-    setState({
-      authenticated: Boolean(data?.authenticated ?? true),
-      customer: data?.customer ?? null,
-      admin: null,
-      csrfToken: data?.csrfToken ?? null,
-    });
-    return data;
-  }, []);
+  const register = useCallback(
+    async (payload) => {
+      const data = await customerApi.register(payload);
+      adopt(data);
+      return data;
+    },
+    [adopt],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -131,8 +147,8 @@ export function SessionProvider({ actor = 'customer', children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...state, actor, status, login, register, logout, refresh: bootstrap, patchIdentity }),
-    [state, actor, status, login, register, logout, bootstrap, patchIdentity],
+    () => ({ ...state, actor, status, login, register, logout, refresh: bootstrap, patchIdentity, verifyLoginOtp }),
+    [state, actor, status, login, register, logout, bootstrap, patchIdentity, verifyLoginOtp],
   );
 
   // This provider is mounted as a layout route, so nested routes arrive through

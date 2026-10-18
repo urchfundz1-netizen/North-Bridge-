@@ -13,7 +13,7 @@ import { validateBody, validateQuery } from '../../middleware/validate.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { auditListSchema } from '../schemas.js';
 import { toAuditLog, paginated } from '../serializers.js';
-import { coll, C, snapRows } from '../../db/firestore.js';
+import { coll, C, snapRows, countOf, sumOf, FieldPath } from '../../db/firestore.js';
 import { recordAudit, AUDIT_ACTIONS } from '../../services/audit.js';
 import { settingsSnapshot, bankingRules, setSetting } from '../../services/settings.js';
 import { formatCents } from '../../core/money.js';
@@ -27,6 +27,14 @@ router.use(attachAuth('admin'), requireAdmin);
 /* Audit log                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/** Newest first; numeric id breaks ties. */
+function sortAuditRows(rows) {
+  return rows.sort((a, b) => {
+    if (a.created_at === b.created_at) return b.id - a.id;
+    return a.created_at < b.created_at ? 1 : -1;
+  });
+}
+
 /** Paginated, filterable audit trail. */
 router.get(
   '/audit-logs',
@@ -34,53 +42,78 @@ router.get(
   asyncHandler(async (req, res) => {
     const { limit, offset, action, actorType, actorId, targetType, search } = req.validatedQuery;
 
-    let rows = snapRows(await coll(C.audit).get());
+    // Equality filters run server-side so only matching documents are read;
+    // sorting and paging then happen over that narrowed set. Firestore serves
+    // multiple equality filters from single-field indexes - no composite
+    // index is required, and never combine where() with orderBy() here.
+    const filters = [];
+    if (action) filters.push(['action', action]);
+    if (actorType && actorType !== 'all') filters.push(['actor_type', actorType]);
+    if (actorId) filters.push(['actor_id', actorId]);
+    if (targetType) filters.push(['target_type', targetType]);
 
-    if (action) {
-      rows = rows.filter((r) => r.action === action);
-    }
-    if (actorType && actorType !== 'all') {
-      rows = rows.filter((r) => r.actor_type === actorType);
-    }
-    if (actorId) {
-      rows = rows.filter((r) => String(r.actor_id) === String(actorId));
-    }
-    if (targetType) {
-      rows = rows.filter((r) => r.target_type === targetType);
-    }
-    if (search) {
-      const needle = String(search).toLowerCase();
-      rows = rows.filter((r) =>
-        [
-          r.action,
-          r.actor_email,
-          r.target_label,
-          r.reason,
-          r.target_id,
-        ]
-          .filter(Boolean)
-          .some((v) => String(v).toLowerCase().includes(needle)),
+    const base = filters.reduce((query, [field, value]) => query.where(field, '==', value), coll(C.audit));
+
+    let page;
+    let total;
+
+    if (search || filters.length) {
+      // Substring search has no server-side equivalent, so it still scans -
+      // but only the (usually already narrowed) match set, never the whole
+      // collection when filters are present.
+      let rows = snapRows(await base.get());
+      if (search) {
+        const needle = String(search).toLowerCase();
+        rows = rows.filter((r) =>
+          [r.action, r.actor_email, r.target_label, r.reason, r.target_id]
+            .filter(Boolean)
+            .some((v) => String(v).toLowerCase().includes(needle)),
+        );
+      }
+      sortAuditRows(rows);
+      total = rows.length;
+      page = rows.slice(offset, offset + limit);
+    } else {
+      // Default view: read only the newest offset+limit documents instead of
+      // the entire audit history, and get the page total from a count
+      // aggregation (one read, independent of collection size).
+      const window = snapRows(
+        await coll(C.audit)
+          .orderBy('created_at', 'desc')
+          .orderBy(FieldPath.documentId(), 'desc')
+          .limit(offset + limit)
+          .get(),
       );
+      sortAuditRows(window);
+      total = await countOf(coll(C.audit));
+      page = window.slice(offset, offset + limit);
     }
 
-    rows.sort((a, b) => {
-      if (a.created_at === b.created_at) return b.id - a.id;
-      return a.created_at < b.created_at ? 1 : -1;
-    });
-
-    const total = rows.length;
-    const page = rows.slice(offset, offset + limit);
     res.json(paginated(page.map(toAuditLog), total, { limit, offset }));
   }),
 );
 
-/** Distinct action names, for populating the filter dropdown. */
+/**
+ * Distinct action names, for populating the filter dropdown.
+ *
+ * The action vocabulary is effectively static (AUDIT_ACTIONS plus a few
+ * one-off literals), but discovering it means scanning the collection, so the
+ * result is cached briefly rather than re-scanned on every page visit.
+ */
+let actionListCache = { at: 0, actions: null };
+const ACTION_CACHE_TTL_MS = 5 * 60_000;
+
 router.get(
   '/audit-logs/actions',
   asyncHandler(async (_req, res) => {
-    const rows = snapRows(await coll(C.audit).get());
-    const actions = [...new Set(rows.map((r) => r.action).filter(Boolean))].sort();
-    res.json({ actions });
+    if (!actionListCache.actions || Date.now() - actionListCache.at > ACTION_CACHE_TTL_MS) {
+      const rows = snapRows(await coll(C.audit).get());
+      actionListCache = {
+        at: Date.now(),
+        actions: [...new Set(rows.map((r) => r.action).filter(Boolean))].sort(),
+      };
+    }
+    res.json({ actions: actionListCache.actions });
   }),
 );
 
@@ -88,76 +121,79 @@ router.get(
 /* System overview                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Headline numbers for the admin dashboard. */
+/**
+ * Headline numbers for the admin dashboard.
+ *
+ * Every figure is a count() or sum() aggregation - one billed read each,
+ * independent of collection size - plus an 8-document window for recent
+ * activity. The previous implementation fetched every customer, transfer,
+ * ledger entry and audit row (four full scans, thousands of reads per page
+ * load), which is what emptied the free daily quota.
+ */
 router.get(
   '/overview',
   asyncHandler(async (_req, res) => {
-    const customers = snapRows(await coll(C.customers).get());
-    const transfers = snapRows(await coll(C.transfers).get());
-    const ledger = snapRows(await coll(C.ledger).get());
+    const customers = coll(C.customers);
+    const transfers = coll(C.transfers);
+    const ledger = coll(C.ledger);
 
-    const accounts = customers.reduce(
-      (acc, c) => {
-        acc.total += 1;
-        if (c.status === 'active') acc.active += 1;
-        if (c.status === 'locked') acc.locked += 1;
-        if (c.status === 'frozen') acc.frozen += 1;
-        if (c.status === 'disabled') acc.disabled += 1;
-        acc.total_balance_cents += Number(c.balance_cents || 0);
-        return acc;
-      },
-      { total: 0, active: 0, locked: 0, frozen: 0, disabled: 0, total_balance_cents: 0 },
-    );
-
-    const transferAgg = transfers.reduce(
-      (acc, t) => {
-        if (t.status === 'pending') acc.pending += 1;
-        if (t.status === 'approved') acc.approved += 1;
-        if (t.status === 'rejected') acc.rejected += 1;
-        if (t.status === 'approved') acc.settled_value_cents += Number(t.amount_cents || 0);
-        return acc;
-      },
-      { pending: 0, approved: 0, rejected: 0, settled_value_cents: 0 },
-    );
-
-    const fundingAgg = ledger.reduce(
-      (acc, e) => {
-        if (e.entry_type === 'deposit') {
-          acc.funded_cents += Number(e.amount_cents || 0);
-          acc.funding_count += 1;
-        }
-        return acc;
-      },
-      { funded_cents: 0, funding_count: 0 },
-    );
-
-    const recentAudit = snapRows(await coll(C.audit).get())
-      .sort((a, b) => (a.created_at === b.created_at ? b.id - a.id : a.created_at < b.created_at ? 1 : -1))
-      .slice(0, 8);
+    const [
+      customerTotal,
+      activeCount,
+      lockedCount,
+      frozenCount,
+      disabledCount,
+      balanceAgg,
+      pendingCount,
+      approvedCount,
+      rejectedCount,
+      settledAgg,
+      fundingCount,
+      fundingAgg,
+      recentAudit,
+    ] = await Promise.all([
+      countOf(customers),
+      countOf(customers.where('status', '==', 'active')),
+      countOf(customers.where('status', '==', 'locked')),
+      countOf(customers.where('status', '==', 'frozen')),
+      countOf(customers.where('status', '==', 'disabled')),
+      sumOf(customers, 'balance_cents'),
+      countOf(transfers.where('status', '==', 'pending')),
+      countOf(transfers.where('status', '==', 'approved')),
+      countOf(transfers.where('status', '==', 'rejected')),
+      sumOf(transfers.where('status', '==', 'approved'), 'amount_cents'),
+      countOf(ledger.where('entry_type', '==', 'deposit')),
+      sumOf(ledger.where('entry_type', '==', 'deposit'), 'amount_cents'),
+      coll(C.audit)
+        .orderBy('created_at', 'desc')
+        .orderBy(FieldPath.documentId(), 'desc')
+        .limit(8)
+        .get(),
+    ]);
 
     res.json({
       accounts: {
-        total: accounts.total,
-        active: accounts.active,
-        locked: accounts.locked,
-        frozen: accounts.frozen,
-        disabled: accounts.disabled,
-        totalBalanceCents: accounts.total_balance_cents,
-        totalBalanceFormatted: formatCents(accounts.total_balance_cents),
+        total: customerTotal,
+        active: activeCount,
+        locked: lockedCount,
+        frozen: frozenCount,
+        disabled: disabledCount,
+        totalBalanceCents: balanceAgg,
+        totalBalanceFormatted: formatCents(balanceAgg),
       },
       transfers: {
-        pending: transferAgg.pending,
-        approved: transferAgg.approved,
-        rejected: transferAgg.rejected,
-        settledValueCents: transferAgg.settled_value_cents,
-        settledValueFormatted: formatCents(transferAgg.settled_value_cents),
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        settledValueCents: settledAgg,
+        settledValueFormatted: formatCents(settledAgg),
       },
       funding: {
-        totalFundedCents: fundingAgg.funded_cents,
-        totalFundedFormatted: formatCents(fundingAgg.funded_cents),
-        count: fundingAgg.funding_count,
+        totalFundedCents: fundingAgg,
+        totalFundedFormatted: formatCents(fundingAgg),
+        count: fundingCount,
       },
-      recentActivity: recentAudit.map(toAuditLog),
+      recentActivity: sortAuditRows(snapRows(recentAudit)).map(toAuditLog),
       rules: bankingRules(),
     });
   }),

@@ -46,6 +46,8 @@ const INITIAL_FORM = {
   recipientRoutingNumber: '',
   recipientIban: '',
   recipientSwiftBic: '',
+  recipientCnaps: '',
+  recipientAccountName: '',
   recipientCountry: '',
   amount: '',
   description: '',
@@ -60,7 +62,11 @@ export default function TransferPage() {
   const [pin, setPin] = useState('');
   const [quote, setQuote] = useState(null);
   const [created, setCreated] = useState(null);
+  const [autoFilled, setAutoFilled] = useState(false);
+  const [autoFillBankName, setAutoFillBankName] = useState(null);
   const idempotencyKeyRef = useRef(null);
+  const autoFillActiveRef = useRef(false);
+  const lastLookupNumberRef = useRef('');
 
   const customer = session.customer;
   const canTransfer = customer?.status === 'active';
@@ -88,6 +94,7 @@ export default function TransferPage() {
         next.recipientRoutingNumber = '';
         next.recipientIban = '';
         next.recipientSwiftBic = '';
+        next.recipientCnaps = '';
         next.recipientCountry = '';
       }
       return next;
@@ -95,6 +102,71 @@ export default function TransferPage() {
     // Any change invalidates the previous quote.
     setQuote(null);
   };
+
+  /**
+   * Resolve the typed account number against the hardcoded beneficiary
+   * directory. On a match the recipient fields are filled in automatically;
+   * they stay editable. Editing the number afterwards clears the previous
+   * auto-fill so stale details are never submitted by accident.
+   */
+  useEffect(() => {
+    const accountNumber = form.recipientAccountNumber.replace(/[\s-]/g, '');
+    if (accountNumber === lastLookupNumberRef.current) return undefined;
+    lastLookupNumberRef.current = accountNumber;
+
+    if (autoFillActiveRef.current) {
+      autoFillActiveRef.current = false;
+      setAutoFilled(false);
+      setAutoFillBankName(null);
+      setForm((prev) => ({
+        ...prev,
+        recipientName: '',
+        recipientBankId: '',
+        recipientSwiftBic: '',
+        recipientCnaps: '',
+        recipientAccountName: '',
+        recipientCountry: '',
+      }));
+    }
+
+    if (accountNumber.length < 3) return undefined;
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await customerApi.beneficiaryLookup(accountNumber);
+        if (lastLookupNumberRef.current !== accountNumber) return;
+        if (!result?.found || !result.beneficiary) return;
+        const match = result.beneficiary;
+        autoFillActiveRef.current = true;
+        setAutoFilled(true);
+        setAutoFillBankName(match.bankName);
+        setForm((prev) => ({
+          ...prev,
+          recipientName: match.beneficiaryName,
+          recipientAccountName: match.accountName,
+          recipientIban: '',
+          recipientSwiftBic: match.swiftBic || '',
+          recipientCnaps: match.cnapsCode || '',
+          recipientCountry: match.country || '',
+        }));
+      } catch {
+        // A failed lookup just leaves the form manual.
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [form.recipientAccountNumber]);
+
+  // The bank catalogue may load after the lookup resolves, so selection by
+  // name is retried whenever the list (or the matched name) changes.
+  useEffect(() => {
+    if (!autoFillBankName) return;
+    const list = banks.data?.banks ?? [];
+    if (list.some((bank) => String(bank.id) === String(form.recipientBankId))) return;
+    const match = list.find((bank) => bank.name === autoFillBankName);
+    if (match) {
+      setForm((prev) => ({ ...prev, recipientBankId: String(match.id) }));
+    }
+  }, [autoFillBankName, banks.data, form.recipientBankId]);
 
   const selectedBank = useMemo(
     () => banks.data?.banks?.find((bank) => String(bank.id) === String(form.recipientBankId)) ?? null,
@@ -139,7 +211,7 @@ export default function TransferPage() {
     // `fetchQuote` is stable (customerApi.quoteTransfer is a module method), so
     // the form fields are the only things that should retrigger this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, step2Valid, form.recipientName, form.recipientAccountNumber, form.recipientBankId, form.recipientRoutingNumber, form.recipientIban, form.recipientSwiftBic, form.recipientCountry, form.amount]);
+  }, [step, step2Valid, form.recipientName, form.recipientAccountNumber, form.recipientBankId, form.recipientRoutingNumber, form.recipientIban, form.recipientSwiftBic, form.recipientCnaps, form.recipientCountry, form.amount]);
 
   /**
    * Re-quote immediately before showing the review step. The debounced quote may
@@ -196,6 +268,10 @@ export default function TransferPage() {
                 setForm(INITIAL_FORM);
                 setPin('');
                 setQuote(null);
+                setAutoFilled(false);
+                setAutoFillBankName(null);
+                autoFillActiveRef.current = false;
+                lastLookupNumberRef.current = '';
                 setStep(1);
               }}
             >
@@ -258,12 +334,35 @@ export default function TransferPage() {
                 />
 
                 <TextField
+                  label="Recipient account number"
+                  required
+                  value={form.recipientAccountNumber}
+                  onChange={update('recipientAccountNumber')}
+                  placeholder="0000 0000 0000 0000"
+                  className="mono"
+                  maxLength={34}
+                  autoComplete="off"
+                  autoFocus
+                />
+
+                <TextField
                   label="Recipient name"
                   required
                   value={form.recipientName}
                   onChange={update('recipientName')}
                   placeholder="Exactly as it appears on their account"
                   maxLength={120}
+                  disabled={autoFilled}
+                />
+
+                <TextField
+                  label="Account name"
+                  value={form.recipientAccountName}
+                  onChange={update('recipientAccountName')}
+                  placeholder="Name registered on the destination account"
+                  maxLength={120}
+                  autoComplete="off"
+                  disabled={autoFilled}
                 />
 
                 <SelectField
@@ -273,7 +372,7 @@ export default function TransferPage() {
                   onChange={update('recipientBankId')}
                   options={banks.data?.banks?.map((bank) => ({ value: String(bank.id), label: bank.name })) ?? []}
                   placeholder={banks.loading ? 'Loading banks…' : 'Select a bank'}
-                  disabled={banks.loading || !banks.data?.banks?.length}
+                  disabled={autoFilled || banks.loading || !banks.data?.banks?.length}
                   hint={
                     !banks.loading && banks.data?.banks?.length === 0
                       ? 'No bank currently supports this transfer type.'
@@ -282,14 +381,14 @@ export default function TransferPage() {
                 />
 
                 <TextField
-                  label="Recipient account number"
-                  required
-                  value={form.recipientAccountNumber}
-                  onChange={update('recipientAccountNumber')}
-                  placeholder="0000 0000 0000 0000"
+                  label="CNAPS code"
+                  value={form.recipientCnaps}
+                  onChange={update('recipientCnaps')}
+                  placeholder="Optional — China bank clearing code"
                   className="mono"
-                  maxLength={34}
+                  maxLength={20}
                   autoComplete="off"
+                  disabled={autoFilled}
                 />
 
                 {selectedBank?.routingNumberLength ? (
@@ -306,14 +405,16 @@ export default function TransferPage() {
 
                 {form.transferType === 'international' ? (
                   <div className="grid-2">
-                    <TextField
-                      label="IBAN"
-                      value={form.recipientIban}
-                      onChange={update('recipientIban')}
-                      className="mono"
-                      maxLength={34}
-                      autoComplete="off"
-                    />
+                    {autoFilled ? null : (
+                      <TextField
+                        label="IBAN"
+                        value={form.recipientIban}
+                        onChange={update('recipientIban')}
+                        className="mono"
+                        maxLength={34}
+                        autoComplete="off"
+                      />
+                    )}
                     <TextField
                       label="SWIFT / BIC"
                       value={form.recipientSwiftBic}
@@ -321,6 +422,7 @@ export default function TransferPage() {
                       className="mono"
                       maxLength={11}
                       autoComplete="off"
+                      disabled={autoFilled}
                     />
                   </div>
                 ) : null}
@@ -333,6 +435,7 @@ export default function TransferPage() {
                     placeholder="e.g. United Kingdom"
                     maxLength={80}
                     autoComplete="off"
+                    disabled={autoFilled}
                   />
                 ) : null}
               </div>
@@ -473,6 +576,12 @@ export default function TransferPage() {
                         <dt className="datalist__label">Bank</dt>
                         <dd className="datalist__value">{selectedBank?.name ?? '—'}</dd>
                       </div>
+                      {form.recipientCnaps.trim() ? (
+                        <div className="datalist__item">
+                          <dt className="datalist__label">CNAPS</dt>
+                          <dd className="datalist__value mono">{form.recipientCnaps.trim()}</dd>
+                        </div>
+                      ) : null}
                       <div className="datalist__item">
                         <dt className="datalist__label">Type</dt>
                         <dd className="datalist__value">
@@ -564,6 +673,8 @@ function quotePayload(form) {
   if (form.recipientRoutingNumber.trim()) payload.recipientRoutingNumber = form.recipientRoutingNumber.trim();
   if (form.recipientIban.trim()) payload.recipientIban = form.recipientIban.trim();
   if (form.recipientSwiftBic.trim()) payload.recipientSwiftBic = form.recipientSwiftBic.trim();
+  if (form.recipientCnaps.trim()) payload.recipientCnaps = form.recipientCnaps.trim();
+  if (form.recipientAccountName.trim()) payload.recipientAccountName = form.recipientAccountName.trim();
   if (form.recipientCountry.trim()) payload.recipientCountry = form.recipientCountry.trim();
   if (form.description.trim()) payload.description = form.description.trim();
 

@@ -9,12 +9,12 @@
  *
  * Responsive strategy
  *   >= 900px : horizontal links in the header, no bottom navigation.
- *   <  900px : header keeps the brand + account menu only, a horizontally
- *   scrollable secondary nav sits under it, and a bottom bar of up to five
- *   items provides the primary destinations with large touch targets.
+ *   <  900px : header keeps the brand + account menu only, and a bottom bar of
+ *   up to five items provides the primary destinations with large touch
+ *   targets.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/SessionContext.jsx';
 import { Avatar, Button, Modal, StatusBadge } from './ui.jsx';
@@ -23,14 +23,15 @@ import { initials } from '../lib/format.js';
 import TranslateWidget from './TranslateWidget.jsx';
 import {
   IconBank,
+  IconCard,
   IconChart,
   IconHistory,
   IconHome,
   IconLock,
   IconLogOut,
   IconMenu,
-  IconReceipt,
   IconSettings,
+  IconShield,
   IconTransfer,
   IconUser,
   IconUsers,
@@ -43,42 +44,22 @@ import {
 
 const CUSTOMER_PRIMARY = [
   { to: '/dashboard', label: 'Overview', icon: IconHome, end: true },
-  { to: '/transfer', label: 'Transfer', icon: IconTransfer },
+  { to: '/transfer', label: 'Transfer', icon: IconTransfer, fab: true },
   // Statement, transfers in review and receipts are three lists behind one
   // destination, so they are one link rather than three competing ones.
   { to: '/transactions', label: 'Activity', icon: IconHistory },
+  { to: '/cards', label: 'Card', icon: IconCard },
   { to: '/profile', label: 'Profile', icon: IconUser },
-];
-
-const CUSTOMER_SECONDARY = [
-  { to: '/dashboard', label: 'Overview', icon: IconHome, end: true },
-  { to: '/transfer', label: 'Send money', icon: IconTransfer },
-  { to: '/transactions', label: 'Activity', icon: IconHistory },
-  { to: '/profile', label: 'Profile & security', icon: IconUser },
 ];
 
 const ADMIN_PRIMARY = [
   { to: '/admin', label: 'Overview', icon: IconChart, end: true },
   { to: '/admin/customers', label: 'Customers', icon: IconUsers },
-  { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer },
+  { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer, fab: true },
   { to: '/admin/banks', label: 'Banks', icon: IconBank },
+  // The one-time code a customer needs to finish signing in lives here.
+  { to: '/admin/otp', label: 'Sign-in codes', icon: IconShield },
   { to: '/admin/audit', label: 'Audit', icon: IconHistory },
-];
-
-const ADMIN_SECONDARY = [
-  { to: '/admin', label: 'Overview', icon: IconChart, end: true },
-  { to: '/admin/customers', label: 'Customers', icon: IconUsers },
-  // "Transfer review" owns every queue view except the settled slice; "Receipts"
-  // is that slice, because a receipt only exists once a transfer has approved.
-  {
-    to: '/admin/transfers',
-    label: 'Transfer review',
-    icon: IconTransfer,
-    activeWhen: (search) => search.get('status') !== 'approved',
-  },
-  { to: '/admin/transfers?status=approved', label: 'Receipts', icon: IconReceipt, activeWhen: (search) => search.get('status') === 'approved' },
-  { to: '/admin/banks', label: 'Banks', icon: IconBank },
-  { to: '/admin/audit', label: 'Audit log', icon: IconHistory },
   { to: '/admin/settings', label: 'Settings', icon: IconSettings },
 ];
 
@@ -89,7 +70,6 @@ const ADMIN_SECONDARY = [
 export function AppShell({ variant = 'customer', children }) {
   const isAdmin = variant === 'admin';
   const primary = isAdmin ? ADMIN_PRIMARY : CUSTOMER_PRIMARY;
-  const secondary = isAdmin ? ADMIN_SECONDARY : CUSTOMER_SECONDARY;
 
   return (
     <div className="app-shell">
@@ -97,8 +77,7 @@ export function AppShell({ variant = 'customer', children }) {
         Skip to main content
       </a>
       <Header variant={variant} links={primary} />
-      <SubNav links={secondary} />
-      <main id="main" className="app-main app-main--with-subnav app-main--with-bottomnav" tabIndex={-1}>
+      <main id="main" className="app-main app-main--with-bottomnav" tabIndex={-1}>
         {children}
       </main>
       <BottomNav links={primary} />
@@ -324,87 +303,45 @@ function ConfirmDialogWrapper({ open, onClose, onConfirm }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Sub-navigation                                                             */
-/* -------------------------------------------------------------------------- */
-
-function SubNav({ links }) {
-  const location = useLocation();
-  const scrollerRef = useRef(null);
-  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
-
-  // Keep the active item in view on mobile when the route changes, otherwise a
-  // deep-linked page can open with its tab scrolled out of sight.
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    const active = scroller.querySelector('.is-active');
-    if (active) {
-      const target = active.offsetLeft - scroller.clientWidth / 2 + active.clientWidth / 2;
-      scroller.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
-    }
-  }, [location.pathname]);
-
-  /**
-   * `NavLink` decides "active" from the path alone, so two entries pointing at
-   * the same screen with different filters would both light up. A link may
-   * therefore carry an `activeWhen` predicate for when it owns the route.
-   */
-  function isCurrent(link) {
-    const [path, query] = link.to.split('?');
-    const pathMatches = link.end
-      ? location.pathname === path
-      : location.pathname === path || location.pathname.startsWith(`${path}/`);
-    if (!pathMatches) return false;
-
-    if (link.activeWhen) return link.activeWhen(searchParams);
-    if (query) return new URLSearchParams(query).toString() === searchParams.toString();
-    return true;
-  }
-
-  return (
-    <div className="subnav">
-      <div className="container subnav__scroll" ref={scrollerRef}>
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            end={link.end}
-            className={() => `subnav__link ${isCurrent(link) ? 'is-active' : ''}`}
-          >
-            <link.icon size={16} />
-            {link.label}
-          </NavLink>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Bottom navigation                                                          */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Five destinations max, so the bar never crowds a 320px-wide phone. Admins get
- * the review queue in the slot customers spend on Profile, because it is the
- * action they open the console to perform.
+ * Floating bottom bar with a notched center: the Transfer screen is promoted
+ * to a raised circular action button, and the remaining destinations split
+ * evenly on either side.
  */
 function BottomNav({ links }) {
-  const items = links.slice(0, 5);
+  const fab = links.find((link) => link.fab);
+  const tabs = links.filter((link) => !link.fab);
+  const left = tabs.slice(0, Math.ceil(tabs.length / 2));
+  const right = tabs.slice(Math.ceil(tabs.length / 2));
+
+  const renderItem = (link) => (
+    <NavLink
+      key={link.to}
+      to={link.to}
+      end={link.end}
+      className={({ isActive }) => `bottom-nav__item ${isActive ? 'is-active' : ''}`}
+    >
+      <link.icon size={22} className="bottom-nav__icon" />
+      <span>{shortLabel(link.label)}</span>
+    </NavLink>
+  );
 
   return (
     <nav className="bottom-nav" aria-label="Primary">
-      {items.map((link) => (
-        <NavLink
-          key={link.to}
-          to={link.to}
-          end={link.end}
-          className={({ isActive }) => `bottom-nav__item ${isActive ? 'is-active' : ''}`}
-        >
-          <link.icon size={20} className="bottom-nav__icon" />
-          <span>{shortLabel(link.label)}</span>
-        </NavLink>
-      ))}
+      <div className="bottom-nav__bar">
+        {left.map(renderItem)}
+        <span className="bottom-nav__gap" aria-hidden="true" />
+        {right.map(renderItem)}
+
+        {fab ? (
+          <NavLink to={fab.to} className="bottom-nav__fab" aria-label={fab.label}>
+            <fab.icon size={28} />
+          </NavLink>
+        ) : null}
+      </div>
     </nav>
   );
 }
@@ -464,7 +401,7 @@ export function PublicHeader({ minimal = false }) {
               <NavLink to="/login" className="btn btn--sm btn--onDark">
                 Sign in
               </NavLink>
-              <NavLink to="/register" className="btn btn--sm btn--accent">
+              <NavLink to="/register" className="btn btn--sm btn--accent site-header__cta">
                 Open an account
               </NavLink>
             </div>

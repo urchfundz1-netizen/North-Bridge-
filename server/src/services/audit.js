@@ -14,6 +14,7 @@ export const AUDIT_ACTIONS = {
   ADMIN_LOGIN_FAILED: 'admin.login_failed',
   ADMIN_LOGOUT: 'admin.logout',
   CUSTOMER_LOGIN: 'customer.login',
+  CUSTOMER_LOGIN_CHALLENGED: 'customer.login_challenged',
   CUSTOMER_LOGIN_FAILED: 'customer.login_failed',
   CUSTOMER_LOGOUT: 'customer.logout',
   CUSTOMER_REGISTERED: 'customer.registered',

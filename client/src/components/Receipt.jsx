@@ -80,8 +80,10 @@ export function Receipt({ receipt, actions = true, className = '' }) {
         <div className="receipt__grid">
           <Item label="Recipient" value={payload.recipient?.name} />
           <Item label="Recipient account" value={<span className="mono">{payload.recipient?.accountNumber}</span>} />
+          <Item label="Account name" value={payload.recipient?.accountName || '—'} />
           <Item label="Destination bank" value={payload.recipient?.bank ?? '—'} />
           <Item label="Routing / SWIFT" value={<span className="mono">{payload.recipient?.routingNumber || payload.recipient?.swiftBic || '—'}</span>} />
+          <Item label="CNAPS" value={<span className="mono">{payload.recipient?.cnaps || '—'}</span>} />
           <Item label="IBAN" value={<span className="mono">{payload.recipient?.iban || '—'}</span>} />
           <Item label="Country" value={payload.recipient?.country || '—'} />
         </div>
@@ -199,8 +201,10 @@ function downloadReceipt(payload, receipt) {
     ['From account', payload.customer?.accountNumber],
     ['Recipient', payload.recipient?.name],
     ['Recipient account', payload.recipient?.accountNumber],
+    ['Account name', payload.recipient?.accountName],
     ['Destination bank', payload.recipient?.bank],
     ['Routing / SWIFT', payload.recipient?.routingNumber || payload.recipient?.swiftBic],
+    ['CNAPS', payload.recipient?.cnaps],
     ['IBAN', payload.recipient?.iban],
     ['Transfer type', payload.transaction?.transferTypeLabel],
     ['Amount', amount.amountFormatted],

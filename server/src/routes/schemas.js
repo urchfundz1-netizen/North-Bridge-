@@ -171,6 +171,15 @@ export const customerLoginSchema = z.object({
   password: z.string().min(1, 'Enter your password.').max(200),
 });
 
+/**
+ * The second sign-in step. `challengeId` is the opaque handle returned by a
+ * successful password check; `code` is the 6-digit OTP reserved for it.
+ */
+export const otpVerifySchema = z.object({
+  challengeId: z.string().trim().min(8, 'This sign-in has expired. Please start again.').max(120),
+  code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code.'),
+});
+
 export const adminLoginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Enter your password.').max(200),
@@ -250,6 +259,13 @@ export const transferSchema = z.object({
     stripSeparators,
     z.string().trim().max(11).regex(/^[A-Za-z0-9]*$/).optional().or(z.literal('')),
   ),
+  // CNAPS is the Chinese bank clearing code; same separator-stripping contract
+  // as IBAN / SWIFT above.
+  recipientCnaps: z.preprocess(
+    stripSeparators,
+    z.string().trim().max(20).regex(/^[A-Za-z0-9]*$/).optional().or(z.literal('')),
+  ),
+  recipientAccountName: z.string().trim().max(120).optional(),
   recipientCountry: z.string().trim().max(80).optional(),
   amount: amountSchema,
   description: z.string().trim().max(240).optional(),

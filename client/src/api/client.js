@@ -209,6 +209,8 @@ export const customerApi = {
   session: () => http.get('/api/auth/session'),
   register: (payload) => http.post('/api/auth/register', payload),
   login: (email, password) => http.post('/api/auth/login', { email, password }),
+  verifyLoginOtp: (challengeId, code) =>
+    http.post('/api/auth/login/verify-otp', { challengeId, code }),
   logout: () => http.post('/api/auth/logout', {}),
   changePassword: (payload) => http.post('/api/auth/change-password', payload),
   changeTransferPin: (payload) => http.post('/api/auth/change-transfer-pin', payload),
@@ -224,6 +226,8 @@ export const customerApi = {
   summary: () => http.get('/api/account/summary'),
   transactions: async (params) => paginated(await http.get(`/api/account/transactions${qs(params)}`)),
   banks: (params) => http.get(`/api/account/banks${qs(params)}`),
+  beneficiaryLookup: (accountNumber) =>
+    http.get(`/api/account/beneficiaries/lookup${qs({ accountNumber })}`),
 
   quoteTransfer: (payload) => http.post('/api/transfers/quote', payload),
   createTransfer: (payload) => http.post('/api/transfers', payload),
@@ -245,6 +249,10 @@ export const adminApi = {
   changePassword: (payload) => http.post('/api/admin/auth/change-password', payload),
 
   overview: () => http.get('/api/admin/overview'),
+
+  otpStats: () => http.get('/api/admin/otp/stats'),
+  otpChallenges: async (params) =>
+    paginated(await http.get(`/api/admin/otp/challenges${qs(params)}`)),
 
   customers: async (params) => paginated(await http.get(`/api/admin/customers${qs(params)}`)),
   customer: (id) => http.get(`/api/admin/customers/${id}`),

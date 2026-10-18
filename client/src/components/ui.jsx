@@ -13,6 +13,7 @@ import {
   IconAlert,
   IconCheckCircle,
   IconChevronDown,
+  IconEye,
   IconInbox,
   IconInfo,
   IconX,
@@ -166,21 +167,34 @@ export function TextField({
   required,
   className,
   inputClassName = '',
+  icon: LeadingIcon,
+  trailing,
   ...rest
 }) {
   const generatedId = useId();
   const id = rest.id ?? generatedId;
   const invalid = Boolean(error);
+  const input = (
+    <input
+      {...rest}
+      id={id}
+      className={`input ${LeadingIcon ? 'input--icon' : ''} ${trailing ? 'input--trailing' : ''} ${inputClassName}`}
+      aria-invalid={invalid || undefined}
+      aria-describedby={hint && !invalid ? `${id}-hint` : undefined}
+      required={required}
+    />
+  );
   return (
     <Field label={label} htmlFor={id} hint={hint} error={error} required={required} className={className}>
-      <input
-        {...rest}
-        id={id}
-        className={`input ${inputClassName}`}
-        aria-invalid={invalid || undefined}
-        aria-describedby={hint && !invalid ? `${id}-hint` : undefined}
-        required={required}
-      />
+      {LeadingIcon || trailing ? (
+        <span className="field-control">
+          {LeadingIcon ? <LeadingIcon size={20} className="field-control__icon" /> : null}
+          {input}
+          {trailing}
+        </span>
+      ) : (
+        input
+      )}
     </Field>
   );
 }
@@ -192,16 +206,25 @@ export function TextField({
  * of them gets the same reveal button instead of each screen inventing its own.
  * `revealLabel` keeps the button text meaningful for PINs as well as passwords.
  */
-export function SecretField({ revealLabel = 'password', hint, ...rest }) {
+export function SecretField({ revealLabel = 'password', hint, inline = false, ...rest }) {
   const [visible, setVisible] = useState(false);
   const toggle = (
     <button
       type="button"
-      className="btn btn--ghost btn--sm secret-toggle"
+      className={
+        inline ? 'secret-toggle secret-toggle--inline' : 'btn btn--ghost btn--sm secret-toggle'
+      }
       onClick={() => setVisible((value) => !value)}
       aria-pressed={visible}
+      aria-label={visible ? `Hide ${revealLabel}` : `Show ${revealLabel}`}
     >
-      {visible ? `Hide ${revealLabel}` : `Show ${revealLabel}`}
+      {inline ? (
+        <IconEye size={20} />
+      ) : visible ? (
+        `Hide ${revealLabel}`
+      ) : (
+        `Show ${revealLabel}`
+      )}
     </button>
   );
 
@@ -210,13 +233,18 @@ export function SecretField({ revealLabel = 'password', hint, ...rest }) {
       {...rest}
       type={visible ? 'text' : 'password'}
       autoComplete={rest.autoComplete ?? 'off'}
+      trailing={inline ? toggle : undefined}
       hint={
-        hint ? (
-          <span className="secret-hint">
-            <span>{hint}</span>
-            {toggle}
-          </span>
-        ) : toggle
+        inline
+          ? hint
+          : hint ? (
+              <span className="secret-hint">
+                <span>{hint}</span>
+                {toggle}
+              </span>
+            ) : (
+              toggle
+            )
       }
     />
   );

@@ -23,6 +23,7 @@ import adminAuthRoutes from './routes/admin/auth.routes.js';
 import adminCustomersRoutes from './routes/admin/customers.routes.js';
 import adminTransfersRoutes from './routes/admin/transfers.routes.js';
 import adminBanksRoutes from './routes/admin/banks.routes.js';
+import adminOtpRoutes from './routes/admin/otp.routes.js';
 import adminSystemRoutes from './routes/admin/system.routes.js';
 
 export function createApp({ serveClient = true } = {}) {
@@ -213,6 +214,7 @@ export function createApp({ serveClient = true } = {}) {
   // The admin panel is namespaced under /api/admin so a single mount point
   // makes the privilege boundary obvious in the router tree.
   app.use('/api/admin/auth', adminAuthRoutes);
+  app.use('/api/admin/otp', adminOtpRoutes);
   app.use('/api/admin/customers', adminCustomersRoutes);
   app.use('/api/admin/transfers', adminTransfersRoutes);
   app.use('/api/admin/banks', adminBanksRoutes);

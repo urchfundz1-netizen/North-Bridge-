@@ -26,7 +26,7 @@
  */
 
 import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, AggregateField, FieldPath } from 'firebase-admin/firestore';
 import { config } from '../core/config.js';
 
 /* -------------------------------------------------------------------------- */
@@ -92,9 +92,32 @@ export const C = {
   audit: 'audit_logs',
   counters: 'counters',
   refs: 'unique_refs',
+  loginChallenges: 'login_challenges',
 };
 
-export { FieldValue };
+export { FieldValue, AggregateField, FieldPath };
+
+/* -------------------------------------------------------------------------- */
+/* Aggregations                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Document count of any query. Billed and latency-cost as a *single* read
+ * regardless of how many documents match, so dashboards must use this instead
+ * of fetching the collection and counting in JavaScript.
+ */
+export async function countOf(query) {
+  return (await query.count().get()).data().count;
+}
+
+/**
+ * Sum of a numeric field across any query. Also billed as a single read.
+ * Returns 0 when nothing matches.
+ */
+export async function sumOf(query, field) {
+  const snap = await query.aggregate({ value: AggregateField.sum(field) }).get();
+  return snap.data().value ?? 0;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Time                                                                        */

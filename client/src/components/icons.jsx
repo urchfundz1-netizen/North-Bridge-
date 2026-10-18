@@ -41,6 +41,21 @@ export const IconTransfer = (p) => (
   </Icon>
 );
 
+export const IconCard = (p) => (
+  <Icon {...p}>
+    <rect x="2.5" y="5.5" width="19" height="13" rx="2.5" />
+    <path d="M2.5 10h19" />
+    <path d="M6 14.5h4" />
+  </Icon>
+);
+
+export const IconMail = (p) => (
+  <Icon {...p}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+    <path d="m4.5 7.5 7.5 5.5 7.5-5.5" />
+  </Icon>
+);
+
 export const IconHistory = (p) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="8.5" />

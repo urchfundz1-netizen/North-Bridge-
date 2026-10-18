@@ -25,7 +25,6 @@ import {
   IconArrowRight,
   IconCheckCircle,
   IconHistory,
-  IconSparkle,
   IconTransfer,
 } from '../../components/icons.jsx';
 import { customerApi } from '../../api/client.js';
@@ -87,10 +86,6 @@ export default function DashboardPage() {
               <header className="row wrap gap-4 mb-6">
                 <div className="grow">
                   <h1 className="text-2xl">Good to see you, {firstName(customer.fullName)}</h1>
-                  <p className="muted mt-1">
-                    Last signed in{' '}
-                    {customer.lastLoginAt ? formatDateTime(customer.lastLoginAt) : 'this session'}
-                  </p>
                 </div>
               </header>
 
@@ -109,9 +104,6 @@ export default function DashboardPage() {
                   <div className="row gap-2 no-print">
                     <LinkButton to="/transfer" variant="accent" icon={IconTransfer} size="lg">
                       Transfer
-                    </LinkButton>
-                    <LinkButton to="/transactions" variant="onDark" icon={IconHistory} size="lg">
-                      Activity
                     </LinkButton>
                   </div>
                 </div>
@@ -134,28 +126,6 @@ export default function DashboardPage() {
                 <div className="balance-hero__status">
                   <StatusBadge status={customer.status} />
                 </div>
-              </section>
-
-              {/* ---- Quick actions ---- */}
-              <section className="tile-row mb-6 no-print" aria-label="Quick actions">
-                <Link className="tile" to="/transfer">
-                  <span className="tile__icon">
-                    <IconTransfer size={18} />
-                  </span>
-                  Send money
-                </Link>
-                <Link className="tile" to="/transactions">
-                  <span className="tile__icon">
-                    <IconHistory size={18} />
-                  </span>
-                  Activity
-                </Link>
-                <Link className="tile" to="/profile">
-                  <span className="tile__icon">
-                    <IconSparkle size={18} />
-                  </span>
-                  Profile
-                </Link>
               </section>
 
               <div

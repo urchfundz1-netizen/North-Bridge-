@@ -17,6 +17,7 @@ import {
   createAdmin,
   firstBank,
   getCustomer,
+  getLoginChallenge,
   countTransfers,
   updateAdmin,
 } from './helpers.js';
@@ -225,6 +226,141 @@ describe('customer authentication', () => {
     // The new token still works.
     const live = await client.get('/api/auth/session');
     assert.equal(live.body.authenticated, true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Two-step sign-in (one-time code)                                           */
+/* -------------------------------------------------------------------------- */
+
+describe('two-step customer sign-in', () => {
+  test('a correct password returns a challenge instead of a session', async () => {
+    const record = await createCustomer();
+    const client = new ApiClient(baseUrl);
+
+    const response = await client.post('/api/auth/login', {
+      email: record.email,
+      password: record.password,
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.otpRequired, true);
+    assert.ok(response.body.challengeId, 'a challenge is issued');
+    assert.ok(response.body.expiresAt, 'the challenge carries an expiry');
+    // Only a masked address is echoed back, never the full one.
+    assert.ok(response.body.email.includes('@'));
+    assert.ok(response.body.email.includes('*'));
+
+    // No session exists yet...
+    assert.equal(client.cookies.get('nb_customer_session'), undefined);
+    const probe = await client.get('/api/auth/session');
+    assert.equal(probe.body.authenticated, false);
+
+    // ...and the sign-in is not yet recorded against the account.
+    assert.equal((await getCustomer(record.id)).last_login_at, null);
+
+    // The code is minted for the challenge and held against it as pending.
+    const challenge = await getLoginChallenge(response.body.challengeId);
+    assert.equal(challenge.status, 'pending');
+    assert.match(challenge.otp_code, /^\d{6}$/);
+  });
+
+  test('the reserved code completes the sign-in, and only that code', async () => {
+    const record = await createCustomer();
+    const client = new ApiClient(baseUrl);
+
+    const started = await client.post('/api/auth/login', {
+      email: record.email,
+      password: record.password,
+    });
+    const challenge = await getLoginChallenge(started.body.challengeId);
+    const wrongCode = challenge.otp_code === '000000' ? '111111' : '000000';
+
+    const wrong = await client.post('/api/auth/login/verify-otp', {
+      challengeId: started.body.challengeId,
+      code: wrongCode,
+    });
+    assert.equal(wrong.status, 401);
+    assert.equal(client.cookies.get('nb_customer_session'), undefined, 'no session on a wrong code');
+    assert.equal((await getCustomer(record.id)).last_login_at, null);
+
+    const good = await client.post('/api/auth/login/verify-otp', {
+      challengeId: started.body.challengeId,
+      code: challenge.otp_code,
+    });
+    assert.equal(good.status, 200);
+    assert.ok(client.cookies.get('nb_customer_session'), 'a session is issued on the correct code');
+    assert.ok((await getCustomer(record.id)).last_login_at, 'the sign-in is now recorded');
+    assert.equal(
+      (await getLoginChallenge(started.body.challengeId)).status,
+      'consumed',
+      'the challenge is consumed once the code is used',
+    );
+
+    // A completed challenge cannot be replayed for a second session.
+    const replay = await client.post('/api/auth/login/verify-otp', {
+      challengeId: started.body.challengeId,
+      code: challenge.otp_code,
+    });
+    assert.equal(replay.status, 401);
+  });
+
+  test('a frozen account completes sign-in but is flagged as restricted', async () => {
+    const record = await createCustomer({ status: 'frozen' });
+    const client = new ApiClient(baseUrl);
+
+    const body = await client.loginCustomer(record.email, record.password);
+    assert.deepEqual(body.restrictions, ['frozen']);
+  });
+
+  test('an administrator can read back the code for a pending sign-in', async () => {
+    const record = await createCustomer();
+    const customerClient = new ApiClient(baseUrl);
+    const started = await customerClient.post('/api/auth/login', {
+      email: record.email,
+      password: record.password,
+    });
+
+    const admin = await createAdmin();
+    const adminClient = new ApiClient(baseUrl);
+    await adminClient.loginAdmin(admin.email, admin.password);
+
+    const list = await adminClient.get(
+      `/api/admin/otp/challenges?status=pending&search=${encodeURIComponent(record.email)}`,
+    );
+    assert.equal(list.status, 200);
+    const entry = list.body.data.find((row) => row.challengeId === started.body.challengeId);
+    assert.ok(entry, 'the pending challenge is listed for the administrator');
+
+    const challenge = await getLoginChallenge(started.body.challengeId);
+    assert.equal(entry.code, challenge.otp_code, 'the panel shows the reserved code');
+
+    // That is the code the customer needs to finish signing in.
+    const verified = await customerClient.post('/api/auth/login/verify-otp', {
+      challengeId: started.body.challengeId,
+      code: entry.code,
+    });
+    assert.equal(verified.status, 200);
+    assert.ok(customerClient.cookies.get('nb_customer_session'));
+
+    const stats = await adminClient.get('/api/admin/otp/stats');
+    assert.equal(stats.status, 200);
+    assert.equal(typeof stats.body.pendingChallenges, 'number', 'the pending count is reported');
+    assert.ok(stats.body.totalChallenges >= 1, 'the completed challenge is counted');
+  });
+
+  test('the sign-in code console is closed to customers and anonymous callers', async () => {
+    const anon = new ApiClient(baseUrl);
+    for (const path of ['/api/admin/otp/stats', '/api/admin/otp/challenges']) {
+      const response = await anon.get(path);
+      assert.equal(response.status, 401, `${path} must require an administrator`);
+    }
+
+    const record = await createCustomer();
+    const client = new ApiClient(baseUrl);
+    await client.loginCustomer(record.email, record.password);
+    const response = await client.get('/api/admin/otp/stats');
+    assert.equal(response.status, 401, 'a customer session must not reach the OTP console');
   });
 });
 
