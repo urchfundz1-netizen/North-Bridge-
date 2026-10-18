@@ -89,10 +89,13 @@ async function request(method, path, { body, signal, headers: extraHeaders } = {
   let response;
   try {
     response = await fetch(`${BASE}${path}`, {
+      // 'include' carries the httpOnly session cookie on same-origin requests
+      // exactly as before, and additionally on cross-origin requests when the
+      // API is deployed separately (Vercel client + Firebase Functions API).
+      credentials: 'include',
       method,
       headers,
       body: payload,
-      credentials: 'same-origin',
       signal,
     });
   } catch (error) {

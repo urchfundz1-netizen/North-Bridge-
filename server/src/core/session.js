@@ -116,7 +116,7 @@ export function cookieNameFor(actorType) {
 export function setSessionCookie(res, actorType, token, expiresAt) {
   res.cookie(cookieNameFor(actorType), token, {
     httpOnly: true,
-    sameSite: 'strict',
+    sameSite: config.cookieSameSite,
     secure: config.cookieSecure,
     path: '/',
     expires: new Date(expiresAt),
@@ -126,7 +126,7 @@ export function setSessionCookie(res, actorType, token, expiresAt) {
 export function clearSessionCookie(res, actorType) {
   res.clearCookie(cookieNameFor(actorType), {
     httpOnly: true,
-    sameSite: 'strict',
+    sameSite: config.cookieSameSite,
     secure: config.cookieSecure,
     path: '/',
   });

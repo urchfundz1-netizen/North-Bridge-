@@ -82,6 +82,25 @@ if (isProduction && sessionSecret.startsWith('dev-only')) {
   );
 }
 
+const cookieSecure = bool('COOKIE_SECURE', isProduction);
+
+/*
+ * Cross-site deployments (client on Vercel, API on Cloud Functions) need
+ * `SameSite=None` or the browser withholds the session cookie entirely -
+ * login would appear to succeed and then every page would be signed out.
+ * `None` is only accepted by browsers over HTTPS with `Secure`, so the
+ * combination is validated here rather than discovered in production.
+ */
+const cookieSameSite = str('COOKIE_SAMESITE', 'strict').toLowerCase();
+
+if (!['strict', 'lax', 'none'].includes(cookieSameSite)) {
+  throw new Error(`COOKIE_SAMESITE must be one of strict, lax or none - got "${cookieSameSite}".`);
+}
+
+if (cookieSameSite === 'none' && !cookieSecure) {
+  throw new Error('COOKIE_SAMESITE=none requires COOKIE_SECURE=1; browsers reject insecure SameSite=None cookies.');
+}
+
 const rawClientOrigin = str('CLIENT_ORIGIN');
 const clientOrigin = rawClientOrigin || 'http://localhost:5173';
 
@@ -142,7 +161,8 @@ export const config = {
   sessionSecret,
   sessionTtlHours: int('SESSION_TTL_HOURS', 12),
   adminSessionTtlHours: int('ADMIN_SESSION_TTL_HOURS', 8),
-  cookieSecure: bool('COOKIE_SECURE', isProduction),
+  cookieSecure,
+  cookieSameSite,
 
   firebase,
 
