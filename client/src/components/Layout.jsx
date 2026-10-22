@@ -468,7 +468,7 @@ export function PublicFooter() {
 
         <hr className="divider mt-6" style={{ background: 'rgba(255,255,255,0.14)' }} />
         <p className="text-xs mt-4" style={{ color: 'rgba(255,255,255,0.55)' }}>
-          &copy; {new Date().getFullYear()} Northbridge Bank. Member FDIC (simulated).
+          &copy; {new Date().getFullYear()} Northbridge Bank. Member FDIC.
         </p>
       </div>
     </footer>
