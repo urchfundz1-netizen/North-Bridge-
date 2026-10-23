@@ -17,7 +17,7 @@
 
 import { useState } from 'react';
 import { Button } from './ui.jsx';
-import { IconDownload, IconPrint } from './icons.jsx';
+import { IconPrint } from './icons.jsx';
 import { ReceiptPrinter } from './ReceiptPrinter.jsx';
 
 export function Receipt({ receipt, actions = true, className = '' }) {
@@ -143,9 +143,6 @@ export function Receipt({ receipt, actions = true, className = '' }) {
           <Button variant="secondary" icon={IconPrint} onClick={() => setPrinterOpen(true)}>
             Print
           </Button>
-          <Button variant="secondary" icon={IconDownload} onClick={() => downloadReceipt(payload, receipt)}>
-            Download
-          </Button>
         </div>
       ) : null}
 
@@ -179,86 +176,4 @@ function formatStamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-/**
- * Download the receipt as HTML rather than PDF: it prints from the same markup
- * as the screen, needs no client-side PDF library, and stays readable.
- */
-function downloadReceipt(payload, receipt) {
-  const amount = payload.amounts ?? {};
-  const rows = [
-    ['Receipt number', payload.receiptNumber ?? receipt.receiptNumber],
-    ['Issued', formatStamp(payload.issuedAt)],
-    ['Reference', payload.transaction?.referenceNumber],
-    ['Status', payload.transaction?.statusLabel ?? payload.transaction?.status],
-    ['From', payload.customer?.name],
-    ['From account', payload.customer?.accountNumber],
-    ['Recipient', payload.recipient?.name],
-    ['Recipient account', payload.recipient?.accountNumber],
-    ['Account name', payload.recipient?.accountName],
-    ['Destination bank', payload.recipient?.bank],
-    ['Routing / SWIFT', payload.recipient?.routingNumber || payload.recipient?.swiftBic],
-    ['CNAPS', payload.recipient?.cnaps],
-    ['IBAN', payload.recipient?.iban],
-    ['Transfer type', payload.transaction?.transferTypeLabel],
-    ['Amount', amount.amountFormatted],
-    ['Processing fee', amount.feeFormatted],
-    ['Total debited', amount.totalDebitFormatted],
-    ['Description', payload.description],
-  ].filter(([, value]) => value);
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Receipt ${payload.receiptNumber ?? ''} - ${payload.bank?.name ?? 'Northbridge Bank'}</title>
-<style>
-  body { font-family: "Segoe UI", system-ui, sans-serif; color: #1f2a3a; margin: 40px; max-width: 720px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: #55637a; font-size: 13px; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  td { padding: 9px 0; border-bottom: 1px solid #e2e7ee; vertical-align: top; }
-  td:first-child { width: 38%; color: #55637a; }
-  .total td { border-top: 2px solid #0d1524; border-bottom: 0; font-weight: 700; padding-top: 12px; }
-  footer { margin-top: 28px; font-size: 12px; color: #55637a; border-top: 1px solid #e2e7ee; padding-top: 14px; }
-</style>
-</head>
-<body>
-  <h1>${escapeHtml(payload.bank?.name ?? 'Northbridge Bank')} — Transfer Receipt</h1>
-  <p class="sub">${escapeHtml(payload.receiptNumber ?? receipt.receiptNumber ?? '')}</p>
-  <table>
-    ${rows
-      .map(
-        ([label, value]) =>
-          `<tr${label === 'Total debited' ? ' class="total"' : ''}><td>${escapeHtml(label)}</td><td>${escapeHtml(String(value))}</td></tr>`,
-      )
-      .join('\n    ')}
-  </table>
-  <footer>
-    Issued ${escapeHtml(formatStamp(payload.issuedAt))}. Funds settled once only; this document is the
-    authoritative record of the transaction. Questions? Contact ${escapeHtml(payload.bank?.supportEmail ?? 'support@northbridge.bank')}.
-  </footer>
-</body>
-</html>`;
-
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `northbridge-receipt-${payload.receiptNumber ?? receipt.receiptNumber ?? 'receipt'}.html`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-/** Receipt data contains user-supplied names and descriptions. */
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }

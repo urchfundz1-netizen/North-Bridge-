@@ -87,14 +87,13 @@ export function ReceiptPrinter({ receipt, open, onClose }) {
     };
   }, [open]);
 
-  // When the paper has finished feeding, download the receipt as a printable
-  // HTML file (same layout as the printed sheet).
+  // When the paper has finished feeding, download the receipt as an image.
   useEffect(() => {
     if (!open || phase !== PHASES.COMPLETE || printed.current) return undefined;
     printed.current = true;
 
     const timer = setTimeout(() => {
-      downloadReceiptHtml(payload, receipt);
+      downloadReceiptImage(payload, receipt);
     }, 200);
 
     return () => clearTimeout(timer);
@@ -303,7 +302,7 @@ function PaperContent({ payload }) {
 
       <div className="paper__center">
         <p className="paper__thanks">THANK YOU!</p>
-        <p className="paper__sub">We appreciate your business.</p>
+        <p className="paper__sub">Thank you for Banking with us</p>
 
         <div className="paper__bars" aria-hidden="true">
           <span className="paper__bar paper__bar--h32" />
@@ -348,25 +347,9 @@ function formatStamp(value) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function downloadReceiptHtml(payload, receipt) {
-  const bank = payload.bank ?? {};
-  const tx = payload.transaction ?? {};
-  const customer = payload.customer ?? {};
-  const recipient = payload.recipient ?? {};
-  const amounts = payload.amounts ?? {};
-  const final = tx.final ?? tx.status === 'approved';
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Receipt ${escapeHtml(payload.receiptNumber ?? receipt?.receiptNumber ?? '')} - ${escapeHtml(bank.name ?? 'Northbridge Bank')}</title>
-<style>
-  @page { size: 80mm auto; margin: 6mm; }
+const RECEIPT_IMAGE_CSS = `
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; background: #fff; color: #000; }
-  .sheet { width: 80mm; margin: 0 auto; padding: 6mm; font-family: "Courier New", Courier, monospace; }
+  .sheet { width: 80mm; margin: 0 auto; padding: 6mm; background: #fff; font-family: "Courier New", Courier, monospace; }
   .paper { color: #000; font-size: 12px; line-height: 1.55; }
   .center { text-align: center; }
   .title { margin: 0; font-size: 17px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase; }
@@ -382,92 +365,150 @@ function downloadReceiptHtml(payload, receipt) {
   .thanks { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; }
   .foot { margin: 0; font-size: 10px; text-align: center; color: #333; }
   .stars { margin: 8px 0 0; font-size: 9px; letter-spacing: 0.3em; }
-</style>
-</head>
-<body>
-  <div class="sheet">
-    <div class="paper">
-      <header class="center">
-        <h1 class="title">${escapeHtml(bank.name ?? 'Northbridge Bank')}</h1>
-        <p class="sub">TRANSFER RECEIPT</p>
-      </header>
-      <hr class="rule">
-      <div class="rows">
-        <div class="row"><span>Receipt No.</span><span>${escapeHtml(payload.receiptNumber ?? receipt?.receiptNumber ?? '—')}</span></div>
-        <div class="row"><span>Date</span><span>${escapeHtml(formatStamp(payload.issuedAt))}</span></div>
-        <div class="row"><span>Reference</span><span>${escapeHtml(tx.referenceNumber ?? '—')}</span></div>
-        <div class="row"><span>Transfer type</span><span>${escapeHtml(tx.transferTypeLabel ?? tx.transferType ?? '—')}</span></div>
-      </div>
-      <hr class="rule">
-      <div>
-        <p class="section-title">FROM</p>
-        <div class="rows">
-          <div class="row"><span>Name</span><span>${escapeHtml(customer.name ?? '—')}</span></div>
-          <div class="row"><span>Account</span><span>${escapeHtml(customer.accountNumber ?? '—')}</span></div>
-          <div class="row"><span>Email</span><span>${escapeHtml(customer.email ?? '—')}</span></div>
-        </div>
-      </div>
-      <hr class="rule">
-      <div>
-        <p class="section-title">TO</p>
-        <div class="rows">
-          <div class="row"><span>Name</span><span>${escapeHtml(recipient.name ?? '—')}</span></div>
-          <div class="row"><span>Account</span><span>${escapeHtml(recipient.accountNumber ?? '—')}</span></div>
-          <div class="row"><span>Account name</span><span>${escapeHtml(recipient.accountName ?? '—')}</span></div>
-          <div class="row"><span>Bank</span><span>${escapeHtml(recipient.bank ?? '—')}</span></div>
-          <div class="row"><span>Routing number</span><span>${escapeHtml(recipient.routingNumber ?? '—')}</span></div>
-          <div class="row"><span>SWIFT / BIC</span><span>${escapeHtml(recipient.swiftBic ?? '—')}</span></div>
-          <div class="row"><span>CNAPS</span><span>${escapeHtml(recipient.cnaps ?? '—')}</span></div>
-          <div class="row"><span>IBAN</span><span>${escapeHtml(recipient.iban ?? '—')}</span></div>
-          <div class="row"><span>Country</span><span>${escapeHtml(recipient.country ?? '—')}</span></div>
-        </div>
-      </div>
-      <hr class="rule">
-      <div class="rows">
-        <div class="row"><span>Amount</span><span>${escapeHtml(amounts.amountFormatted ?? '—')}</span></div>
-        <div class="row"><span>Processing fee</span><span>${escapeHtml(amounts.feeFormatted ?? '—')}</span></div>
-      </div>
-      <hr class="rule rule-solid">
-      <div class="rows total">
-        <div class="row"><span>${final ? 'TOTAL DEBITED' : 'TOTAL'}</span><span>${escapeHtml(amounts.totalDebitFormatted ?? '—')}</span></div>
-      </div>
-      ${
-        payload.description
-          ? `<hr class="rule"><div class="rows"><div class="row"><span>Description</span><span>${escapeHtml(payload.description)}</span></div></div>`
-          : ''
-      }
-      ${
-        payload.rejectionReason
-          ? `<hr class="rule"><div class="rows"><div class="row"><span>Reason</span><span>${escapeHtml(payload.rejectionReason)}</span></div></div>`
-          : ''
-      }
-      <hr class="rule">
-      <div class="center">
-        <p class="thanks">THANK YOU!</p>
-        <p class="sub">We appreciate your business.</p>
-        <p class="stars">* * * * * * * * * *</p>
-      </div>
-      <hr class="rule">
-      <p class="foot">${escapeHtml(
-        final
-          ? 'Funds settled once only. This document is the authoritative record of the transaction.'
-          : tx.arrivalHint ?? '',
-      )}</p>
-    </div>
-  </div>
-  <script>window.onload = function(){ window.print(); setTimeout(function(){ window.close(); }, 500); };</script>
-</body>
-</html>`;
+`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `northbridge-receipt-${payload.receiptNumber ?? receipt?.receiptNumber ?? 'receipt'}.html`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+function receiptSheetHtml(payload, receipt) {
+  const bank = payload.bank ?? {};
+  const tx = payload.transaction ?? {};
+  const customer = payload.customer ?? {};
+  const recipient = payload.recipient ?? {};
+  const amounts = payload.amounts ?? {};
+  const final = tx.final ?? tx.status === 'approved';
+
+  return `
+    <div class="sheet">
+      <div class="paper">
+        <header class="center">
+          <h1 class="title">${escapeHtml(bank.name ?? 'Northbridge Bank')}</h1>
+          <p class="sub">TRANSFER RECEIPT</p>
+        </header>
+        <hr class="rule">
+        <div class="rows">
+          <div class="row"><span>Receipt No.</span><span>${escapeHtml(payload.receiptNumber ?? receipt?.receiptNumber ?? '—')}</span></div>
+          <div class="row"><span>Date</span><span>${escapeHtml(formatStamp(payload.issuedAt))}</span></div>
+          <div class="row"><span>Reference</span><span>${escapeHtml(tx.referenceNumber ?? '—')}</span></div>
+          <div class="row"><span>Transfer type</span><span>${escapeHtml(tx.transferTypeLabel ?? tx.transferType ?? '—')}</span></div>
+        </div>
+        <hr class="rule">
+        <div>
+          <p class="section-title">FROM</p>
+          <div class="rows">
+            <div class="row"><span>Name</span><span>${escapeHtml(customer.name ?? '—')}</span></div>
+            <div class="row"><span>Account</span><span>${escapeHtml(customer.accountNumber ?? '—')}</span></div>
+            <div class="row"><span>Email</span><span>${escapeHtml(customer.email ?? '—')}</span></div>
+          </div>
+        </div>
+        <hr class="rule">
+        <div>
+          <p class="section-title">TO</p>
+          <div class="rows">
+            <div class="row"><span>Name</span><span>${escapeHtml(recipient.name ?? '—')}</span></div>
+            <div class="row"><span>Account</span><span>${escapeHtml(recipient.accountNumber ?? '—')}</span></div>
+            <div class="row"><span>Account name</span><span>${escapeHtml(recipient.accountName ?? '—')}</span></div>
+            <div class="row"><span>Bank</span><span>${escapeHtml(recipient.bank ?? '—')}</span></div>
+            <div class="row"><span>Routing number</span><span>${escapeHtml(recipient.routingNumber ?? '—')}</span></div>
+            <div class="row"><span>SWIFT / BIC</span><span>${escapeHtml(recipient.swiftBic ?? '—')}</span></div>
+            <div class="row"><span>CNAPS</span><span>${escapeHtml(recipient.cnaps ?? '—')}</span></div>
+            <div class="row"><span>IBAN</span><span>${escapeHtml(recipient.iban ?? '—')}</span></div>
+            <div class="row"><span>Country</span><span>${escapeHtml(recipient.country ?? '—')}</span></div>
+          </div>
+        </div>
+        <hr class="rule">
+        <div class="rows">
+          <div class="row"><span>Amount</span><span>${escapeHtml(amounts.amountFormatted ?? '—')}</span></div>
+          <div class="row"><span>Processing fee</span><span>${escapeHtml(amounts.feeFormatted ?? '—')}</span></div>
+        </div>
+        <hr class="rule rule-solid">
+        <div class="rows total">
+          <div class="row"><span>${final ? 'TOTAL DEBITED' : 'TOTAL'}</span><span>${escapeHtml(amounts.totalDebitFormatted ?? '—')}</span></div>
+        </div>
+        ${
+          payload.description
+            ? `<hr class="rule"><div class="rows"><div class="row"><span>Description</span><span>${escapeHtml(payload.description)}</span></div></div>`
+            : ''
+        }
+        ${
+          payload.rejectionReason
+            ? `<hr class="rule"><div class="rows"><div class="row"><span>Reason</span><span>${escapeHtml(payload.rejectionReason)}</span></div></div>`
+            : ''
+        }
+        <hr class="rule">
+        <div class="center">
+          <p class="thanks">THANK YOU!</p>
+          <p class="sub">Thank you for Banking with us</p>
+          <p class="stars">* * * * * * * * * *</p>
+        </div>
+        <hr class="rule">
+        <p class="foot">${escapeHtml(
+          final
+            ? 'Funds settled once only. This document is the authoritative record of the transaction.'
+            : tx.arrivalHint ?? '',
+        )}</p>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Rasterise the receipt into a PNG on the client. The sheet is rendered off
+ * screen with its own copy of the styles, serialised into an SVG
+ * `<foreignObject>`, and drawn onto a canvas. That keeps the image identical to
+ * the paper on screen without pulling in an HTML-to-image dependency.
+ */
+function downloadReceiptImage(payload, receipt) {
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position: fixed; left: -10000px; top: 0;';
+
+  const sheetHost = document.createElement('div');
+  sheetHost.style.cssText = 'width: 80mm; background: #fff;';
+  sheetHost.innerHTML = `<style>${RECEIPT_IMAGE_CSS}</style>${receiptSheetHtml(payload, receipt)}`;
+
+  host.appendChild(sheetHost);
+  document.body.appendChild(host);
+
+  const width = Math.ceil(sheetHost.getBoundingClientRect().width);
+  const height = Math.ceil(sheetHost.scrollHeight);
+  const markup = new XMLSerializer().serializeToString(sheetHost);
+  document.body.removeChild(host);
+
+  if (!width || !height) return;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}">` +
+    `${markup}</foreignObject></svg>`;
+
+  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  const image = new Image();
+
+  image.onload = () => {
+    const scale = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(svgUrl);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const pngUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = pngUrl;
+      link.download = `northbridge-receipt-${payload.receiptNumber ?? receipt?.receiptNumber ?? 'receipt'}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(pngUrl);
+    }, 'image/png');
+  };
+
+  image.onerror = () => URL.revokeObjectURL(svgUrl);
+  image.src = svgUrl;
 }
 
 function escapeHtml(value) {
