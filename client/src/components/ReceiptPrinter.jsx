@@ -350,21 +350,21 @@ function formatStamp(value) {
 const RECEIPT_IMAGE_CSS = `
   * { box-sizing: border-box; }
   .sheet { width: 80mm; margin: 0 auto; padding: 6mm; background: #fff; font-family: "Courier New", Courier, monospace; }
-  .paper { color: #000; font-size: 12px; line-height: 1.55; }
+  .paper { color: #000; font-size: 13px; line-height: 1.6; -webkit-font-smoothing: none; font-smooth: never; text-rendering: optimizeLegibility; }
   .center { text-align: center; }
-  .title { margin: 0; font-size: 17px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase; }
-  .sub { margin: 3px 0 0; font-size: 10px; letter-spacing: 0.04em; }
+  .title { margin: 0; font-size: 19px; font-weight: 900; letter-spacing: 0.18em; text-transform: uppercase; }
+  .sub { margin: 4px 0 0; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
   .rule { margin: 18px 0; border: 0; border-top: 1px dashed #000; }
   .rule-solid { border-top: 1px solid #000; }
-  .rows { display: flex; flex-direction: column; gap: 5px; }
-  .row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; }
   .row > span { min-width: 0; }
   .row > span:last-child { text-align: right; word-break: break-word; }
-  .section-title { margin: 0 0 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; }
-  .total { font-size: 14px; font-weight: 700; }
-  .thanks { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; }
-  .foot { margin: 0; font-size: 10px; text-align: center; color: #333; }
-  .stars { margin: 8px 0 0; font-size: 9px; letter-spacing: 0.3em; }
+  .section-title { margin: 0 0 8px; font-size: 11px; font-weight: 900; letter-spacing: 0.2em; }
+  .total { font-size: 16px; font-weight: 900; }
+  .thanks { margin: 0; font-size: 13px; font-weight: 900; letter-spacing: 0.12em; }
+  .foot { margin: 0; font-size: 11px; text-align: center; color: #000; font-weight: 700; }
+  .stars { margin: 10px 0 0; font-size: 10px; letter-spacing: 0.32em; }
 `;
 
 function receiptSheetHtml(payload, receipt) {
