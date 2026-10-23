@@ -620,8 +620,6 @@ export default function TransferPage() {
                   inputClassName="pin-input"
                   placeholder="0000"
                 />
-
-                <Alert tone="warning">Submitting moves the money immediately and cannot be undone.</Alert>
               </div>
 
               <div className="card__footer">
