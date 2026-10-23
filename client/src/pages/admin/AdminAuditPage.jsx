@@ -10,7 +10,6 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AppShell } from '../../components/Layout.jsx';
 import {
-  Alert,
   AsyncBoundary,
   Card,
   DataTable,
@@ -181,11 +180,6 @@ export default function AdminAuditPage() {
               }
             />
           </Card>
-
-          <Alert tone="info" title="This table cannot be edited">
-            The database itself rejects updates and deletes against <code className="mono">audit_logs</code>,
-            and the API exposes no route that can. Entries can only be added, never removed.
-          </Alert>
         </AsyncBoundary>
       </div>
 

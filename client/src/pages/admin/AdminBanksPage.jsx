@@ -240,11 +240,6 @@ export default function AdminBanksPage() {
               fixed
             />
           </Card>
-
-          <Alert tone="info" title="Retiring is not deleting">
-            A retired bank disappears from the customer&#39;s destination list, but existing transfers
-            and receipts keep the bank name they recorded at the time.
-          </Alert>
         </AsyncBoundary>
       </div>
 

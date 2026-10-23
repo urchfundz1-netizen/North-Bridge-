@@ -626,11 +626,9 @@ export default function TransferPage() {
                   hint="Incorrect PINs are counted and will lock transfers temporarily."
                 />
 
-                <Alert tone={quote?.requiresApproval ? 'info' : 'warning'}>
-                  {quote?.requiresApproval
-                    ? 'Submitting places this transfer in the review queue. No money moves until Northbridge approves it.'
-                    : 'Submitting moves the money immediately and cannot be undone.'}
-                </Alert>
+                {quote?.requiresApproval ? null : (
+                  <Alert tone="warning">Submitting moves the money immediately and cannot be undone.</Alert>
+                )}
               </div>
 
               <div className="card__footer">
