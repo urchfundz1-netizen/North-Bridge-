@@ -87,31 +87,25 @@ export function ReceiptPrinter({ receipt, open, onClose }) {
     };
   }, [open]);
 
-  // When the paper has finished feeding, hand the clean sheet to the browser.
-  // `receipt-printing` on the body is what the print stylesheet keys off to
-  // hide the app and leave only the sheet on the page.
+  // When the paper has finished feeding, download the receipt as an HTML
+  // file instead of opening the browser print dialog.
   useEffect(() => {
     if (!open || phase !== PHASES.COMPLETE || printed.current) return undefined;
     printed.current = true;
 
-    const cleanup = () => {
-      document.body.classList.remove('receipt-printing');
-      window.removeEventListener('afterprint', cleanup);
-    };
+    const timer = setTimeout(() => {
+      try {
+        downloadReceipt(payload, receipt);
+      } catch {
+        // If download fails for any reason, fall back to the print dialog so
+        // the user can still get a copy.
+        document.body.classList.add('receipt-printing');
+        window.print();
+      }
+    }, 200);
 
-    document.body.classList.add('receipt-printing');
-    window.addEventListener('afterprint', cleanup);
-
-    // One frame so the sheet is laid out before the dialog opens.
-    const frame = requestAnimationFrame(() => {
-      window.print();
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-      cleanup();
-    };
-  }, [open, phase]);
+    return () => clearTimeout(timer);
+  }, [open, phase, payload, receipt]);
 
   if (!open || !payload) return null;
 
