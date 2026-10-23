@@ -2099,10 +2099,11 @@ button.stat:hover {
   inset: 0;
   z-index: 200;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 24px 16px 56px;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(56px, env(safe-area-inset-bottom));
   background: #eceff3;
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -2113,12 +2114,14 @@ button.stat:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
 }
 
 .receipt-printer__machine {
   position: relative;
   isolation: isolate;
   width: 100%;
+  box-sizing: border-box;
   padding: 12px 12px 32px;
   border: 1px solid #414141;
   border-radius: 24px;
@@ -2162,6 +2165,7 @@ button.stat:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 44px;
   padding: 8px 12px;
   border: 0;
   border-radius: 6px;
@@ -2272,6 +2276,7 @@ button.stat:hover {
   overflow: hidden;
   padding: 0 12px;
   margin-top: -8px;
+  box-sizing: border-box;
 }
 
 .receipt-printer__output--full {
@@ -2288,6 +2293,7 @@ button.stat:hover {
 }
 
 .receipt-printer__btn {
+  min-height: 44px;
   padding: 12px 20px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
@@ -2314,6 +2320,7 @@ button.stat:hover {
 .receipt-paper {
   position: relative;
   min-height: 360px;
+  box-sizing: border-box;
   padding: 28px 24px;
   color: #222;
   background-color: #fffef7;
@@ -2436,6 +2443,10 @@ button.stat:hover {
   font-size: 12px;
 }
 
+.paper__row > span {
+  min-width: 0;
+}
+
 .paper__row > span:last-child {
   text-align: right;
   word-break: break-word;
@@ -2525,8 +2536,18 @@ button.stat:hover {
 }
 
 @media print {
+  @page {
+    margin: 6mm;
+  }
+
   /* While the printer is running, the app is not part of the document: the
      sheet is the whole page. */
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
   body.receipt-printing > *:not(.receipt-printer-portal) {
     display: none !important;
   }
@@ -2537,9 +2558,10 @@ button.stat:hover {
 
   body.receipt-printing .print-sheet {
     display: block !important;
+    box-sizing: border-box;
     width: 80mm;
     margin: 0 auto;
-    padding: 10mm 6mm;
+    padding: 6mm;
     background: #fff;
     color: #000;
   }
@@ -2686,6 +2708,89 @@ button.stat:hover {
 @media (max-width: 380px) {
   .auth-card {
     padding: var(--space-5);
+  }
+
+  .receipt-printer {
+    padding: max(12px, env(safe-area-inset-top)) 8px max(32px, env(safe-area-inset-bottom));
+  }
+
+  .receipt-printer__stage {
+    max-width: 100%;
+  }
+
+  .receipt-printer__machine {
+    border-radius: 16px;
+    padding: 10px 10px 28px;
+  }
+
+  .receipt-printer__head {
+    height: auto;
+    gap: 6px;
+  }
+
+  .receipt-printer__brand {
+    gap: 6px;
+  }
+
+  .receipt-printer__brand span:last-child {
+    font-size: 12px;
+  }
+
+  .receipt-printer__logo {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+
+  .receipt-printer__home {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+
+  .receipt-printer__screen {
+    padding: 14px 10px;
+  }
+
+  .receipt-printer__screen-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .receipt-printer__screen-amount {
+    align-self: flex-end;
+  }
+
+  .receipt-printer__output {
+    width: 94%;
+    padding: 0 6px;
+  }
+
+  .receipt-paper {
+    padding: 20px 12px;
+  }
+
+  .paper__title {
+    font-size: 16px;
+    letter-spacing: 0.12em;
+  }
+
+  .paper__row {
+    font-size: 11px;
+  }
+
+  .paper__row > span:last-child {
+    text-align: right;
+  }
+
+  .receipt-printer__controls {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .receipt-printer__btn {
+    flex: 1 1 100%;
+    width: 100%;
   }
 }
 
