@@ -301,7 +301,6 @@ function PaperContent({ payload }) {
       <hr className="paper__rule" />
 
       <div className="paper__center">
-        <p className="paper__thanks">THANK YOU!</p>
         <p className="paper__sub">Thank you for Banking with us</p>
 
         <div className="paper__bars" aria-hidden="true">
@@ -434,7 +433,6 @@ function receiptSheetHtml(payload, receipt) {
         }
         <hr class="rule">
         <div class="center">
-          <p class="thanks">THANK YOU!</p>
           <p class="sub">Thank you for Banking with us</p>
           <p class="stars">* * * * * * * * * *</p>
         </div>
