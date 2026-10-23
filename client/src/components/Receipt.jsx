@@ -15,10 +15,13 @@
  * is the server's word for "this will never change again".
  */
 
+import { useState } from 'react';
 import { Button } from './ui.jsx';
 import { IconDownload, IconPrint } from './icons.jsx';
+import { ReceiptPrinter } from './ReceiptPrinter.jsx';
 
 export function Receipt({ receipt, actions = true, className = '' }) {
+  const [printerOpen, setPrinterOpen] = useState(false);
   if (!receipt?.payload) return null;
   const { payload } = receipt;
 
@@ -149,7 +152,7 @@ export function Receipt({ receipt, actions = true, className = '' }) {
 
       {actions ? (
         <div className="card__footer row gap-2 no-print">
-          <Button variant="secondary" icon={IconPrint} onClick={() => window.print()}>
+          <Button variant="secondary" icon={IconPrint} onClick={() => setPrinterOpen(true)}>
             Print
           </Button>
           <Button variant="secondary" icon={IconDownload} onClick={() => downloadReceipt(payload, receipt)}>
@@ -157,6 +160,10 @@ export function Receipt({ receipt, actions = true, className = '' }) {
           </Button>
         </div>
       ) : null}
+
+      {/* Print runs through the till printer first, so the customer sees the
+          document as it comes off the machine before it reaches the printer. */}
+      <ReceiptPrinter receipt={receipt} open={printerOpen} onClose={() => setPrinterOpen(false)} />
     </article>
   );
 }

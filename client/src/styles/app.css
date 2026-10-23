@@ -2078,6 +2078,493 @@ button.stat:hover {
   }
 }
 
+/* ==========================================================================
+   Receipt printer
+
+   The till printer the customer sees when they press Print on a receipt. The
+   machine is deliberately dark and physical, so the screen reads as "a receipt
+   is being printed" rather than "a page is being rendered".
+
+   Two copies of the paper exist, both rendered by the same component:
+     .receipt-paper  the animated copy, clipped by the printer slot
+     .print-sheet    the copy the browser prints, hidden on screen
+   ========================================================================== */
+
+.receipt-printer-portal {
+  display: contents;
+}
+
+.receipt-printer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px 16px 56px;
+  background: #eceff3;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.receipt-printer__stage {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.receipt-printer__machine {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  padding: 12px 12px 32px;
+  border: 1px solid #414141;
+  border-radius: 24px;
+  background: linear-gradient(145deg, #393939, #202020);
+  box-shadow:
+    0 20px 36px -20px #000,
+    inset 0 1px 0 #ffffff25,
+    inset 0 -1px 0 #00000080;
+  overflow: hidden;
+}
+
+.receipt-printer__head {
+  height: 44px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.receipt-printer__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.receipt-printer__logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2933;
+  font-weight: 700;
+}
+
+.receipt-printer__home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #d1d5db;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.receipt-printer__home:hover {
+  background: #fff;
+}
+
+.receipt-printer__screen {
+  position: relative;
+  padding: 20px 16px;
+  border: 1px solid #333;
+  border-radius: 12px;
+  background: #111;
+  color: #f5f5f5;
+  box-shadow: inset 0 0 24px #000;
+}
+
+.receipt-printer__screen-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.receipt-printer__screen-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.receipt-printer__screen-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.receipt-printer__screen-amount {
+  font-size: 14px;
+}
+
+.receipt-printer__screen-rule {
+  height: 1px;
+  margin: 20px 0;
+  background: #374151;
+}
+
+.receipt-printer__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.receipt-printer__status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: #9ca3af;
+}
+
+.receipt-printer__check {
+  font-size: 22px;
+  line-height: 1;
+  color: #22c55e;
+}
+
+.receipt-printer__status-text {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #d1d5db;
+}
+
+.receipt-printer__status-sub {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.receipt-printer__slot {
+  position: absolute;
+  z-index: 40;
+  bottom: 12px;
+  left: 24px;
+  right: 24px;
+  height: 8px;
+  border: 1px solid #111;
+  border-radius: 4px;
+  background: #080808;
+  box-shadow: inset 0 1px 3px #000;
+}
+
+/* The slot is a window: while the paper feeds, only the part that has come
+   out is visible. Once it has finished, the whole document is shown. */
+.receipt-printer__output {
+  position: relative;
+  z-index: 10;
+  width: 90%;
+  height: 320px;
+  overflow: hidden;
+  padding: 0 12px;
+  margin-top: -8px;
+}
+
+.receipt-printer__output--full {
+  height: auto;
+  overflow: visible;
+}
+
+.receipt-printer__controls {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.receipt-printer__btn {
+  padding: 12px 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.receipt-printer__btn--primary {
+  border-color: #111827;
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.receipt-printer__btn--primary:hover {
+  background: #374151;
+}
+
+/* ---- Thermal paper ------------------------------------------------------ */
+
+.receipt-paper {
+  position: relative;
+  min-height: 360px;
+  padding: 28px 24px;
+  color: #222;
+  background-color: #fffef7;
+  background-image: repeating-linear-gradient(0deg, transparent, transparent 27px, #eae7dc 28px);
+  font-family: "Courier New", Courier, monospace;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  clip-path: polygon(
+    0 0, 100% 0, 100% 98%,
+    97% 100%, 94% 98%, 91% 100%,
+    88% 98%, 85% 100%, 82% 98%,
+    79% 100%, 76% 98%, 73% 100%,
+    70% 98%, 67% 100%, 64% 98%,
+    61% 100%, 58% 98%, 55% 100%,
+    52% 98%, 49% 100%, 46% 98%,
+    43% 100%, 40% 98%, 37% 100%,
+    34% 98%, 31% 100%, 28% 98%,
+    25% 100%, 22% 98%, 19% 100%,
+    16% 98%, 13% 100%, 10% 98%,
+    7% 100%, 4% 98%, 0 100%
+  );
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.receipt-paper--visible {
+  opacity: 1;
+}
+
+.receipt-paper--done {
+  transform: translateY(0);
+}
+
+.receipt-paper--stepped {
+  animation: receipt-feed-steps 3.5s linear forwards;
+}
+
+@keyframes receipt-feed-steps {
+  0% {
+    transform: translateY(-100%);
+  }
+  10% {
+    transform: translateY(-90%);
+  }
+  20% {
+    transform: translateY(-80%);
+  }
+  30% {
+    transform: translateY(-70%);
+  }
+  40% {
+    transform: translateY(-60%);
+  }
+  50% {
+    transform: translateY(-50%);
+  }
+  60% {
+    transform: translateY(-40%);
+  }
+  70% {
+    transform: translateY(-30%);
+  }
+  80% {
+    transform: translateY(-20%);
+  }
+  90% {
+    transform: translateY(-10%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* ---- The paper's content ------------------------------------------------ */
+
+.paper {
+  color: #222;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.paper__center {
+  text-align: center;
+}
+
+.paper__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.paper__sub {
+  margin: 3px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.paper__rule {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px dashed #a7a49a;
+}
+
+.paper__rule--solid {
+  border-top: 1px solid #555;
+}
+
+.paper__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.paper__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.paper__row > span:last-child {
+  text-align: right;
+  word-break: break-word;
+}
+
+.paper__section-title {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.paper__rows--total .paper__row {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.paper__thanks {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.paper__bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  height: 40px;
+  margin-top: 22px;
+}
+
+.paper__bar {
+  display: block;
+  width: 4px;
+  background: #000;
+}
+
+.paper__bar--h20 {
+  height: 20px;
+  width: 6px;
+}
+
+.paper__bar--h24 {
+  height: 24px;
+  width: 2px;
+}
+
+.paper__bar--h28 {
+  height: 28px;
+  width: 4px;
+}
+
+.paper__bar--h32 {
+  height: 32px;
+  width: 4px;
+}
+
+.paper__bar--h36 {
+  height: 36px;
+  width: 4px;
+}
+
+.paper__bar--h40 {
+  height: 40px;
+  width: 6px;
+}
+
+.paper__stars {
+  margin: 8px 0 0;
+  font-size: 9px;
+  letter-spacing: 0.3em;
+}
+
+.paper__foot {
+  margin: 0;
+  font-size: 10px;
+  text-align: center;
+  color: #4a4a4a;
+}
+
+/* ---- What the browser prints -------------------------------------------- */
+
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  /* While the printer is running, the app is not part of the document: the
+     sheet is the whole page. */
+  body.receipt-printing > *:not(.receipt-printer-portal) {
+    display: none !important;
+  }
+
+  body.receipt-printing .receipt-printer {
+    display: none !important;
+  }
+
+  body.receipt-printing .print-sheet {
+    display: block !important;
+    width: 80mm;
+    margin: 0 auto;
+    padding: 10mm 6mm;
+    background: #fff;
+    color: #000;
+  }
+
+  body.receipt-printing .print-sheet .paper {
+    color: #000;
+  }
+
+  body.receipt-printing .print-sheet .paper__rule {
+    border-top-color: #000;
+  }
+
+  body.receipt-printing .print-sheet .paper__sub,
+  body.receipt-printing .print-sheet .paper__foot {
+    color: #333;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .receipt-paper--stepped {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* Dashboard: the activity feed takes the wide column once there is room, so
    the account detail cards can sit alongside it instead of underneath. */
 @media (min-width: 1000px) {
