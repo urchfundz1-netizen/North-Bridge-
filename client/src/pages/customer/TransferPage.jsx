@@ -462,13 +462,7 @@ export default function TransferPage() {
                   value={form.amount}
                   onChange={update('amount')}
                   placeholder="0.00"
-                  hint={
-                    banks.data?.rules
-                      ? `Between ${formatCents(banks.data.rules.minTransferCents)} and ${formatCents(
-                          banks.data.rules.maxTransferCents,
-                        )}.`
-                      : undefined
-                  }
+                  hint={undefined}
                   error={
                     form.amount && !step2Valid
                       ? amount
