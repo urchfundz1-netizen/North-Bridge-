@@ -608,10 +608,6 @@ export default function TransferPage() {
                 <div className="divider" />
 
                 <h2 className="text-md mb-2">Authorise with your transfer PIN</h2>
-                <p className="text-sm muted mb-4">
-                  This is the 4-digit PIN you chose when opening your account — not your sign-in
-                  password.
-                </p>
 
                 <SecretField
                   label="Transfer PIN"
@@ -623,12 +619,9 @@ export default function TransferPage() {
                   onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
                   inputClassName="pin-input"
                   placeholder="0000"
-                  hint="Incorrect PINs are counted and will lock transfers temporarily."
                 />
 
-                {quote?.requiresApproval ? null : (
-                  <Alert tone="warning">Submitting moves the money immediately and cannot be undone.</Alert>
-                )}
+                <Alert tone="warning">Submitting moves the money immediately and cannot be undone.</Alert>
               </div>
 
               <div className="card__footer">

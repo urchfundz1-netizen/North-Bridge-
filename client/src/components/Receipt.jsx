@@ -51,7 +51,7 @@ export function Receipt({ receipt, actions = true, className = '' }) {
         </div>
       </header>
 
-      {!final ? (
+      {!final && (tx.arrivalHint || tx.expectedArrivalBy) ? (
         <div
           className="text-xs"
           style={{
@@ -62,7 +62,7 @@ export function Receipt({ receipt, actions = true, className = '' }) {
             letterSpacing: '0.02em',
           }}
         >
-          {tx.arrivalHint ?? 'Money will arrive within 24 hours.'}
+          {tx.arrivalHint ?? ''}
           {tx.expectedArrivalBy ? ` Expected by ${formatStamp(tx.expectedArrivalBy)}.` : ''}
         </div>
       ) : null}
@@ -134,19 +134,7 @@ export function Receipt({ receipt, actions = true, className = '' }) {
                 {payload.bank?.supportEmail ?? 'support@northbridge.bank'}.
               </span>
             </>
-          ) : (
-            <>
-              <span>
-                <strong>Your transfer PIN was confirmed</strong> when you submitted this transfer.
-                No money has left your account yet, and you can withdraw the transfer at any time
-                until it is approved.
-              </span>
-              <span>
-                {tx.arrivalHint ?? 'Money will arrive within 24 hours.'} This receipt keeps its
-                number as the transfer progresses.
-              </span>
-            </>
-          )}
+          ) : null}
         </div>
       </footer>
 

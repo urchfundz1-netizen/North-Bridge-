@@ -171,8 +171,7 @@ export default function ProfilePage() {
                   ]}
                 />
                 <p className="text-xs subtle mt-4">
-                  To change your email address or date of birth, contact Northbridge support. These
-                  details identify your account and cannot be edited here.
+                  Contact Northbridge support to update your email address or date of birth.
                 </p>
               </Card>
 

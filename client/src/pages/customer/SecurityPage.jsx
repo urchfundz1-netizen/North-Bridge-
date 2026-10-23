@@ -190,8 +190,7 @@ export default function SecurityPage() {
               {pinError ? <Alert tone="danger">{pinError.message}</Alert> : null}
 
               <Alert tone="info" title="Both credentials are required">
-                Changing your transfer PIN needs your password and your current PIN. This stops
-                anyone with access to an unlocked device from re-pointing your future payments.
+                Changing your transfer PIN needs your password and your current PIN.
               </Alert>
 
               <form onSubmit={submitPin} noValidate>
