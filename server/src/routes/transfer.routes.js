@@ -96,7 +96,7 @@ router.post(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Request the 6-digit code that authorises the next transfer.
+ * Request the 8-digit code that authorises the next transfer.
  *
  * The code is never returned here: it is read back from the admin console and
  * relayed to the customer, exactly like the sign-in code. Minting a new code

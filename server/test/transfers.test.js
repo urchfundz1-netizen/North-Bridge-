@@ -219,7 +219,7 @@ describe('transfer one-time codes', () => {
 
     const stored = await getLoginChallenge(otp.otpChallengeId);
     assert.equal(stored.purpose, 'transfer', 'the challenge is tagged for a transfer');
-    assert.match(stored.otp_code, /^\d{6}$/);
+    assert.match(stored.otp_code, /^\d{8}$/);
 
     // This is exactly what the admin console reads before relaying the code.
     const admin = await adminClient();
@@ -229,7 +229,7 @@ describe('transfer one-time codes', () => {
     assert.equal(entry.purpose, 'transfer');
     assert.equal(entry.code, stored.otp_code);
 
-    const wrongCode = stored.otp_code === '000000' ? '111111' : '000000';
+    const wrongCode = stored.otp_code === '00000000' ? '11111111' : '00000000';
     const rejected = await client.post('/api/transfers', {
       ...transferPayload(),
       otpChallengeId: otp.otpChallengeId,

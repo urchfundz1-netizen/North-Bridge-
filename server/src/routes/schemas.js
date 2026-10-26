@@ -276,7 +276,7 @@ export const transferSchema = z.object({
     .trim()
     .min(8, 'Request a one-time code before submitting this transfer.')
     .max(120),
-  otpCode: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit one-time code.'),
+  otpCode: z.string().trim().regex(/^\d{8}$/, 'Enter the 8-digit one-time code.'),
   /** Client-generated token; a retried submit returns the original transfer. */
   idempotencyKey: z.string().trim().max(64).optional(),
 });

@@ -96,7 +96,7 @@ export default function AdminOtpPage() {
   const columns = [
     {
       key: 'code',
-      header: 'Sign-in code',
+      header: 'Code',
       render: (row) => (
         <span className="row gap-2">
           <span className="mono strong" style={{ fontSize: 'var(--text-lg)', letterSpacing: '0.15em' }}>

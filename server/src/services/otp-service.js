@@ -3,9 +3,9 @@
  *
  * Sign-in and transfers are both two-step. For sign-in the password is checked
  * first; for a transfer the PIN is checked first. If that credential holds, the
- * server mints a fresh 6-digit code and records a challenge for that attempt.
- * Only that code completes the challenge, so a leaked password or PIN on its own
- * cannot move money or issue a session.
+ * server mints a fresh numeric code (6 digits for sign-in, 8 for transfers) and
+ * records a challenge for that attempt. Only that code completes the challenge,
+ * so a leaked password or PIN on its own cannot move money or issue a session.
  *
  * Because no email or SMS provider is wired up, the code is never actually
  * transmitted: the administrator panel reads it back out ("fetch the OTP") and
@@ -21,6 +21,7 @@ import { generateToken } from '../core/crypto.js';
 import { C, coll, getById, nowIso, setById, snapRows } from '../db/firestore.js';
 
 export const OTP_LENGTH = 6;
+export const TRANSFER_OTP_LENGTH = 8;
 export const OTP_TTL_MS = 10 * 60_000;
 export const OTP_MAX_ATTEMPTS = 5;
 
@@ -30,9 +31,9 @@ const CHALLENGE_STATUSES = ['pending', 'consumed', 'expired', 'failed'];
 /* Challenge lifecycle                                                        */
 /* -------------------------------------------------------------------------- */
 
-/** Six digits, zero-padded, e.g. "042913". */
-function generateCode() {
-  return String(randomInt(0, 10 ** OTP_LENGTH)).padStart(OTP_LENGTH, '0');
+/** Zero-padded digits, e.g. "042913" or "04291357". */
+function generateCode(length = OTP_LENGTH) {
+  return String(randomInt(0, 10 ** length)).padStart(length, '0');
 }
 
 /**
@@ -42,7 +43,7 @@ function generateCode() {
  */
 async function createChallenge(customer, purpose) {
   const challengeId = generateToken(18);
-  const code = generateCode();
+  const code = generateCode(purpose === 'transfer' ? TRANSFER_OTP_LENGTH : OTP_LENGTH);
   const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
 
   await setById(C.loginChallenges, challengeId, {
