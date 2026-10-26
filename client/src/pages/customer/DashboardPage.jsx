@@ -70,10 +70,7 @@ export default function DashboardPage() {
         ) : null}
 
         {params.get('notice') === 'frozen' || isFrozen ? (
-          <Alert tone="warning" title="Your account is frozen">
-            You can sign in and review your balance and history, but outgoing transfers are disabled
-            until an administrator lifts the freeze.
-          </Alert>
+          <Alert tone="warning" title="Your account is frozen" />
         ) : null}
 
         {isBlocked ? (

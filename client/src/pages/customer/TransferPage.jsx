@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AppShell } from '../../components/Layout.jsx';
 import {
   Alert,
@@ -33,6 +33,7 @@ import { IconArrowLeft, IconArrowRight, IconLock } from '../../components/icons.
 import { customerApi, parseAmount } from '../../api/client.js';
 import { useAsync, useAction } from '../../lib/hooks.js';
 import { TransferSuccess } from '../../components/TransferSuccess.jsx';
+import { FrozenTransferNotice } from '../../components/FrozenTransferNotice.jsx';
 import { formatCents, TRANSFER_TYPE_OPTIONS } from '../../lib/format.js';
 import { useSession } from '../../context/SessionContext.jsx';
 
@@ -55,6 +56,7 @@ const INITIAL_FORM = {
 
 export default function TransferPage() {
   const session = useSession();
+  const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(INITIAL_FORM);
@@ -247,6 +249,33 @@ export default function TransferPage() {
       <AppShell variant="customer">
         <div className="container page" style={{ maxWidth: 680 }}>
           <TransferSuccess transfer={transfer} receipt={receipt} />
+        </div>
+      </AppShell>
+    );
+  }
+
+  /* ---- Frozen account ---- */
+  if (customer?.status === 'frozen') {
+    return (
+      <AppShell variant="customer">
+        <div className="container page" style={{ maxWidth: 680 }}>
+          <Link
+            to="/dashboard"
+            className="row gap-2 text-sm muted"
+            style={{ marginBottom: 'var(--space-3)' }}
+          >
+            <IconArrowLeft size={16} />
+            Back to overview
+          </Link>
+          <h1 className="text-2xl mb-4">Send a transfer</h1>
+          <Alert tone="warning" title="Account frozen">
+            Outgoing transfers are unavailable while your account is frozen.
+          </Alert>
+          <FrozenTransferNotice
+            open
+            onClose={() => navigate('/dashboard')}
+            accountNumber={customer.accountNumber}
+          />
         </div>
       </AppShell>
     );

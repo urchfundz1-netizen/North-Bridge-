@@ -496,8 +496,8 @@ table {
 }
 
 /* The "Open an account" CTA and the header "Sign in" link are dropped on
-   phones to keep the header compact; both remain reachable from the landing
-   page body (hero actions) and the minimal headers keep their own Sign in. */
+   phones to keep the header compact; the landing page keeps its hero actions
+   and auth pages keep their form-level links. */
 @media (max-width: 899px) {
   .site-header__actions .site-header__cta,
   .site-header__actions .site-header__signin {

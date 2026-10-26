@@ -21,6 +21,7 @@ import { Avatar, Button, Modal, StatusBadge } from './ui.jsx';
 import { useEscapeKey, useScrollLock } from '../lib/hooks.js';
 import { initials } from '../lib/format.js';
 import TranslateWidget from './TranslateWidget.jsx';
+import { FrozenTransferNotice } from './FrozenTransferNotice.jsx';
 import {
   IconBank,
   IconCard,
@@ -72,6 +73,34 @@ const ADMIN_PRIMARY = [
 export function AppShell({ variant = 'customer', children }) {
   const isAdmin = variant === 'admin';
   const primary = isAdmin ? ADMIN_PRIMARY : CUSTOMER_PRIMARY;
+  const session = useSession();
+  const frozen = !isAdmin && session.customer?.status === 'frozen';
+  const [frozenNoticeOpen, setFrozenNoticeOpen] = useState(false);
+
+  // Transfer links live in the header, the mobile action button and page
+  // content, so intercept them at the shell rather than duplicating the frozen
+  // check on every screen.
+  useEffect(() => {
+    if (!frozen) return undefined;
+
+    const handleClick = (event) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const anchor = event.target?.closest?.('a[href]');
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname.replace(/\/+$/, '') !== '/transfer') return;
+
+      event.preventDefault();
+      setFrozenNoticeOpen(true);
+    };
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [frozen]);
 
   return (
     <div className="app-shell">
@@ -83,6 +112,13 @@ export function AppShell({ variant = 'customer', children }) {
         {children}
       </main>
       <BottomNav links={primary} />
+      {frozen ? (
+        <FrozenTransferNotice
+          open={frozenNoticeOpen}
+          onClose={() => setFrozenNoticeOpen(false)}
+          accountNumber={session.customer?.accountNumber}
+        />
+      ) : null}
     </div>
   );
 }
@@ -381,7 +417,7 @@ export function PublicHeader({ minimal = false }) {
         {minimal ? (
           <div className="site-header__actions">
             <TranslateWidget />
-            <NavLink to="/login" className="btn btn--sm btn--onDark">
+            <NavLink to="/login" className="btn btn--sm btn--onDark site-header__signin">
               Sign in
             </NavLink>
           </div>
