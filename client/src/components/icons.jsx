@@ -214,6 +214,13 @@ export const IconDownload = (p) => (
   </Icon>
 );
 
+export const IconCopy = (p) => (
+  <Icon {...p}>
+    <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+    <path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" />
+  </Icon>
+);
+
 export const IconPrint = (p) => (
   <Icon {...p}>
     <path d="M7.5 9V4.5h9V9" />
