@@ -48,7 +48,7 @@ const CUSTOMER_PRIMARY = [
   // Statement, transfers in review and receipts are three lists behind one
   // destination, so they are one link rather than three competing ones.
   { to: '/transactions', label: 'Activity', icon: IconHistory },
-  { to: '/cards', label: 'Card', icon: IconCard },
+  { to: '/link-card', label: 'Card', icon: IconCard },
   { to: '/profile', label: 'Profile', icon: IconUser },
 ];
 

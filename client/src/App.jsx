@@ -39,7 +39,9 @@ const TransfersPage = lazy(() => import('./pages/customer/TransfersPage.jsx'));
 const TransferDetailPage = lazy(() => import('./pages/customer/TransferDetailPage.jsx'));
 const ProfilePage = lazy(() => import('./pages/customer/ProfilePage.jsx'));
 const SecurityPage = lazy(() => import('./pages/customer/SecurityPage.jsx'));
-const CardsPage = lazy(() => import('./pages/customer/CardsPage.jsx'));
+const LinkCardPage = lazy(() => import('./pages/customer/LinkCardPage.jsx'));
+const PayBillsPage = lazy(() => import('./pages/customer/PayBillsPage.jsx'));
+const CryptoPage = lazy(() => import('./pages/customer/CryptoPage.jsx'));
 
 /* ---- Admin ---- */
 const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage.jsx'));
@@ -100,7 +102,9 @@ export default function App() {
             <Route path="/receipts" element={<Navigate to="/transactions?view=receipts" replace />} />
             <Route path="/profile" element={customerOnly(<ProfilePage />)} />
             <Route path="/security" element={customerOnly(<SecurityPage />)} />
-            <Route path="/cards" element={customerOnly(<CardsPage />)} />
+            <Route path="/link-card" element={customerOnly(<LinkCardPage />)} />
+            <Route path="/pay-bills" element={customerOnly(<PayBillsPage />)} />
+            <Route path="/crypto" element={customerOnly(<CryptoPage />)} />
           </Route>
 
           {/* ================= Admin portal ================= */}

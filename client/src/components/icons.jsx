@@ -41,12 +41,17 @@ export const IconTransfer = (p) => (
   </Icon>
 );
 
-export const IconCard = (p) => (
-  <Icon {...p}>
-    <rect x="2.5" y="5.5" width="19" height="13" rx="2.5" />
-    <path d="M2.5 10h19" />
-    <path d="M6 14.5h4" />
-  </Icon>
+export const IconCard = ({ size = 20, className = '', style, ...rest }) => (
+  <img
+    src="https://cdn-icons-png.flaticon.com/512/6963/6963703.png"
+    alt=""
+    aria-hidden="true"
+    width={size}
+    height={size}
+    className={className}
+    style={{ objectFit: 'contain', ...style }}
+    {...rest}
+  />
 );
 
 export const IconMail = (p) => (
@@ -263,6 +268,31 @@ export const IconMenu = (p) => (
   <Icon {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />
   </Icon>
+);
+
+export const IconBill = (p) => (
+  <Icon {...p}>
+    <path d="M7 3.5h7l4 4v13H7V3.5Z" />
+    <path d="M14 3.5v4h4" />
+    <path d="M12 9.5v7" />
+    <path d="M13.6 10.7c-.3-.5-.9-.8-1.6-.8-1 0-1.8.5-1.8 1.3s.8 1.1 1.8 1.3 1.8.5 1.8 1.3-.8 1.3-1.8 1.3c-.7 0-1.3-.3-1.6-.8" />
+  </Icon>
+);
+
+export const IconBitcoin = ({ size = 20, className = '', ...rest }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="#f7931a"
+    className={className}
+    aria-hidden="true"
+    focusable="false"
+    {...rest}
+  >
+    <path d="M23.638 14.904c-1.602 6.43-8.113 10.34-14.542 8.736C2.67 22.05-1.244 15.525.362 9.105 1.962 2.67 8.475-1.243 14.9.358c6.43 1.605 10.342 8.115 8.738 14.548v-.002Zm-6.35-4.613c.24-1.59-.974-2.45-2.64-3.03l.54-2.153-1.315-.33-.525 2.107c-.345-.087-.705-.167-1.064-.25l.526-2.127-1.32-.33-.54 2.165c-.285-.067-.565-.132-.84-.2l-1.815-.45-.35 1.407s.975.225.955.236c.535.136.63.486.615.766l-1.477 5.92c-.075.166-.24.406-.614.314.015.02-.96-.24-.96-.24l-.66 1.51 1.71.426.93.242-.54 2.19 1.32.327.54-2.17c.36.1.705.19 1.05.273l-.51 2.154 1.32.33.545-2.19c2.24.427 3.93.257 4.64-1.774.57-1.637-.03-2.58-1.217-3.196.854-.193 1.5-.76 1.68-1.93h.01Zm-3.01 4.22c-.404 1.64-3.157.75-4.05.53l.72-2.9c.896.23 3.757.67 3.33 2.37Zm.41-4.24c-.37 1.49-2.662.735-3.405.55l.654-2.64c.744.18 3.137.524 2.75 2.084v.006Z" />
+  </svg>
 );
 
 export const IconGlobe = (p) => (

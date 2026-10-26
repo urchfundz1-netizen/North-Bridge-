@@ -3438,6 +3438,10 @@ button.stat:hover {
   }
 }
 
+.tile-row--three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .tile {
   display: flex;
   flex-direction: column;

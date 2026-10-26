@@ -16,13 +16,15 @@ import {
 
   Card,
   LinkButton,
-
-
+  SectionTitle,
   StatusBadge,
 } from '../../components/ui.jsx';
 import { LedgerRow } from '../../components/Transactions.jsx';
 import {
   IconArrowRight,
+  IconBill,
+  IconBitcoin,
+  IconCard,
   IconCheckCircle,
   IconHistory,
   IconTransfer,
@@ -127,6 +129,30 @@ export default function DashboardPage() {
                   <StatusBadge status={customer.status} />
                 </div>
               </section>
+
+              <div className="mb-6">
+                <SectionTitle>Quick actions</SectionTitle>
+                <div className="tile-row tile-row--three">
+                  <Link className="tile" to="/pay-bills">
+                    <span className="tile__icon">
+                      <IconBill size={18} />
+                    </span>
+                    Pay bills
+                  </Link>
+                  <Link className="tile" to="/crypto">
+                    <span className="tile__icon">
+                      <IconBitcoin size={18} />
+                    </span>
+                    Crypto
+                  </Link>
+                  <Link className="tile" to="/link-card">
+                    <span className="tile__icon">
+                      <IconCard size={18} />
+                    </span>
+                    Link Card
+                  </Link>
+                </div>
+              </div>
 
               <div
                 style={{

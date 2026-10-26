@@ -66,7 +66,7 @@ export function createApp({ serveClient = true } = {}) {
     // https origin browsers block/upgrade the http form as mixed content).
     img:
       'https://www.gstatic.com https://fonts.gstatic.com https://www.google.com https://translate.googleapis.com ' +
-      'https://translate.google.com http://translate.google.com',
+      'https://translate.google.com http://translate.google.com https://cdn-icons-png.flaticon.com',
     connect:
       'https://translate.google.com https://translate.googleapis.com https://translate-pa.googleapis.com',
     frame: 'https://translate.google.com',
