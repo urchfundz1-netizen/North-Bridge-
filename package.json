@@ -21,7 +21,7 @@
     "seed": "npm --workspace server run seed",
     "seed:admin": "npm --workspace server run seed:admin",
     "migrate:data": "npm --workspace server run migrate:data",
-    "test": "firebase emulators:exec --only firestore,storage --project demo-northbridge \"npm --workspace server run test\"",
+    "test": "firebase emulators:exec --only firestore,storage --project northbridge-local \"npm --workspace server run test\"",
     "test:unit": "npm --workspace server run test",
     "smoke": "node scripts/smoke.mjs",
     "check:svg": "node scripts/check-svg.mjs",

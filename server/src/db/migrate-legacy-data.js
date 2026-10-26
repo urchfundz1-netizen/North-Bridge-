@@ -55,7 +55,7 @@ function loadEnvPrivateKey() {
 function initFirestore() {
   const emulating = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
   const projectId =
-    process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || 'demo-northbridge';
+    process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || 'northbridge-local';
 
   if (!getApps().length) {
     if (emulating) {

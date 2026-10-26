@@ -26,9 +26,9 @@ process.env.TRANSFER_FEE_CENTS = '150';
 // already running, and guarantees the admin SDK never reaches for real creds.
 process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
 process.env.STORAGE_EMULATOR_HOST ??= '127.0.0.1:9199';
-process.env.FIREBASE_PROJECT_ID = 'demo-northbridge';
-process.env.GCLOUD_PROJECT = 'demo-northbridge';
-process.env.FIREBASE_STORAGE_BUCKET = 'demo-northbridge.appspot.com';
+process.env.FIREBASE_PROJECT_ID = 'northbridge-local';
+process.env.GCLOUD_PROJECT = 'northbridge-local';
+process.env.FIREBASE_STORAGE_BUCKET = 'northbridge-local.appspot.com';
 
 const {
   db,

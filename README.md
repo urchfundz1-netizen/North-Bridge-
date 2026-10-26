@@ -82,7 +82,7 @@ All configuration lives in `.env` (never committed) — see `.env.example` for t
 - `CLIENT_ORIGIN` — must match the real client origin; the server refuses to boot in production while it is still a loopback address (silent CORS failures otherwise).
 - `REQUIRE_TRANSFER_APPROVAL` — `1` keeps transfers Pending until an admin approves them; `0` settles immediately.
 - `TRANSFER_FEE_CENTS`, `MIN_TRANSFER_CENTS`, `MAX_TRANSFER_CENTS` — fee and guard rails.
-- `FIREBASE_PROJECT_ID` — the Firestore project (set `demo-northbridge` for the emulator).
+- `FIREBASE_PROJECT_ID` — the Firestore project (set `northbridge-local` for the emulator).
 
 ## Deploying
 

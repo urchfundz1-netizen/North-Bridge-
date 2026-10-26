@@ -43,8 +43,8 @@ let _db = null;
  *                  FIREBASE_PRIVATE_KEY) authenticates against the real project.
  */
 function appOptions() {
-  const projectId = config.firebase.projectId || process.env.GCLOUD_PROJECT || 'demo-northbridge';
-  const emulating = Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.GCLOUD_PROJECT === 'demo-northbridge');
+  const projectId = config.firebase.projectId || process.env.GCLOUD_PROJECT || 'northbridge-local';
+  const emulating = Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.GCLOUD_PROJECT === 'northbridge-local');
   const useServiceAccount = !emulating && config.firebase.clientEmail && config.firebase.privateKey;
   if (useServiceAccount) {
     return {
