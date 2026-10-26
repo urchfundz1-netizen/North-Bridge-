@@ -270,12 +270,23 @@ export const transferSchema = z.object({
   amount: amountSchema,
   description: z.string().trim().max(240).optional(),
   transferPin: transferPinSchema,
+  /** The one-time code requested from the admin console for this transfer. */
+  otpChallengeId: z
+    .string()
+    .trim()
+    .min(8, 'Request a one-time code before submitting this transfer.')
+    .max(120),
+  otpCode: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit one-time code.'),
   /** Client-generated token; a retried submit returns the original transfer. */
   idempotencyKey: z.string().trim().max(64).optional(),
 });
 
-/** Same as a transfer, without the PIN - used to quote a fee before commit. */
-export const transferQuoteSchema = transferSchema.omit({ transferPin: true });
+/** Same as a transfer, without the PIN or code - used to quote a fee. */
+export const transferQuoteSchema = transferSchema.omit({
+  transferPin: true,
+  otpChallengeId: true,
+  otpCode: true,
+});
 
 /* -------------------------------------------------------------------------- */
 /* Admin                                                                      */

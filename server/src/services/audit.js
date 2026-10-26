@@ -23,6 +23,7 @@ export const AUDIT_ACTIONS = {
   CUSTOMER_PASSWORD_CHANGED: 'customer.password_changed',
   CUSTOMER_PIN_CHANGED: 'customer.transfer_pin_changed',
   TRANSFER_REQUESTED: 'transfer.requested',
+  TRANSFER_OTP_REQUESTED: 'transfer.otp_requested',
   TRANSFER_CANCELLED: 'transfer.cancelled',
   TRANSFER_APPROVED: 'transfer.approved',
   TRANSFER_REJECTED: 'transfer.rejected',

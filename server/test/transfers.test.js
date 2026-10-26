@@ -58,9 +58,25 @@ async function adminClient() {
   return { admin, client };
 }
 
-/** Submit a transfer from a signed-in customer client. */
-function submitTransfer(client, overrides = {}) {
-  return client.post('/api/transfers', {
+/**
+ * Request a transfer code and read it back the way the admin console does.
+ * The HTTP response never contains the code itself.
+ */
+async function requestTransferOtp(client) {
+  const response = await client.post('/api/transfers/otp', {});
+  if (response.status !== 201) {
+    throw new Error(`requestTransferOtp failed: ${response.status} ${JSON.stringify(response.body)}`);
+  }
+  const challenge = await getLoginChallenge(response.body.challengeId);
+  if (!challenge) {
+    throw new Error(`requestTransferOtp: no challenge recorded for ${response.body.challengeId}`);
+  }
+  return { otpChallengeId: response.body.challengeId, otpCode: challenge.otp_code };
+}
+
+/** A valid transfer body, before a one-time code is attached. */
+function transferPayload(overrides = {}) {
+  return {
     transferType: 'local',
     recipientName: 'Ben Franklin',
     recipientAccountNumber: '000123456789',
@@ -70,7 +86,13 @@ function submitTransfer(client, overrides = {}) {
     description: 'Rent',
     transferPin: '4321',
     ...overrides,
-  });
+  };
+}
+
+/** Submit a transfer from a signed-in customer client. */
+async function submitTransfer(client, overrides = {}) {
+  const otp = await requestTransferOtp(client);
+  return client.post('/api/transfers', { ...transferPayload(overrides), ...otp });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -183,6 +205,70 @@ describe('transfer creation', () => {
     assert.equal(second.status, 200, 'a retried submission returns the original');
     assert.equal(first.body.transfer.id, second.body.transfer.id);
     assert.equal(await countTransfers(record.id), 1);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* One-time codes                                                             */
+/* -------------------------------------------------------------------------- */
+
+describe('transfer one-time codes', () => {
+  test('the code is shown to administrators and is single-use', async () => {
+    const { record, client } = await fundedCustomer();
+    const otp = await requestTransferOtp(client);
+
+    const stored = await getLoginChallenge(otp.otpChallengeId);
+    assert.equal(stored.purpose, 'transfer', 'the challenge is tagged for a transfer');
+    assert.match(stored.otp_code, /^\d{6}$/);
+
+    // This is exactly what the admin console reads before relaying the code.
+    const admin = await adminClient();
+    const listed = await admin.client.get('/api/admin/otp/challenges?status=pending&purpose=transfer');
+    const entry = listed.body.data.find((row) => row.challengeId === otp.otpChallengeId);
+    assert.ok(entry, 'the pending transfer code is listed for the administrator');
+    assert.equal(entry.purpose, 'transfer');
+    assert.equal(entry.code, stored.otp_code);
+
+    const wrongCode = stored.otp_code === '000000' ? '111111' : '000000';
+    const rejected = await client.post('/api/transfers', {
+      ...transferPayload(),
+      otpChallengeId: otp.otpChallengeId,
+      otpCode: wrongCode,
+    });
+    assert.equal(rejected.status, 403);
+    assert.match(rejected.body.error.message, /one-time code/i);
+    assert.equal(await countTransfers(record.id), 0, 'a wrong code cannot create a transfer');
+
+    const created = await client.post('/api/transfers', {
+      ...transferPayload(),
+      otpChallengeId: otp.otpChallengeId,
+      otpCode: stored.otp_code,
+    });
+    assert.equal(created.status, 201);
+    assert.equal(await countTransfers(record.id), 1);
+
+    const replay = await client.post('/api/transfers', {
+      ...transferPayload({ amount: '20.00' }),
+      otpChallengeId: otp.otpChallengeId,
+      otpCode: stored.otp_code,
+    });
+    assert.equal(replay.status, 403, 'the same code cannot authorise a second transfer');
+    assert.equal(await countTransfers(record.id), 1);
+  });
+
+  test('a code is bound to the customer who requested it', async () => {
+    const owner = await fundedCustomer();
+    const attacker = await fundedCustomer();
+    const otp = await requestTransferOtp(owner.client);
+    const stored = await getLoginChallenge(otp.otpChallengeId);
+
+    const response = await attacker.client.post('/api/transfers', {
+      ...transferPayload(),
+      otpChallengeId: otp.otpChallengeId,
+      otpCode: stored.otp_code,
+    });
+    assert.equal(response.status, 403);
+    assert.equal(await countTransfers(attacker.record.id), 0);
   });
 });
 

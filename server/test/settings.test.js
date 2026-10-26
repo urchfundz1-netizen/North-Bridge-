@@ -22,6 +22,7 @@ import {
   createCustomer,
   createAdmin,
   firstBank,
+  getLoginChallenge,
   getSettingValue,
   latestAudit,
 } from './helpers.js';
@@ -61,6 +62,8 @@ describe('bank identifier normalisation', () => {
 
     // Submitting it must also succeed, and the stored value must be canonical so
     // the receipt matches what the destination bank expects.
+    const otpResponse = await client.post('/api/transfers/otp', {});
+    const otpChallenge = await getLoginChallenge(otpResponse.body.challengeId);
     const created = await client.post('/api/transfers', {
       transferType: 'international',
       recipientName: 'Aurora Pacific Bank',
@@ -71,6 +74,8 @@ describe('bank identifier normalisation', () => {
       recipientCountry: 'Australia',
       amount: '50.00',
       transferPin: customer.transferPin,
+      otpChallengeId: otpResponse.body.challengeId,
+      otpCode: otpChallenge.otp_code,
       idempotencyKey: `norm-${Date.now()}-iban`,
     });
 

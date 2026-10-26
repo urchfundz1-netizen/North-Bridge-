@@ -1,16 +1,18 @@
 /**
- * Sign-in one-time passwords.
+ * One-time passwords.
  *
- * Sign-in is two-step. The password is checked first; if it holds, the server
- * mints a fresh 6-digit code and records a *login challenge* for that attempt.
- * Only that code completes the challenge and only completion issues a session,
- * so a leaked password on its own cannot sign anyone in.
+ * Sign-in and transfers are both two-step. For sign-in the password is checked
+ * first; for a transfer the PIN is checked first. If that credential holds, the
+ * server mints a fresh 6-digit code and records a challenge for that attempt.
+ * Only that code completes the challenge, so a leaked password or PIN on its own
+ * cannot move money or issue a session.
  *
  * Because no email or SMS provider is wired up, the code is never actually
  * transmitted: the administrator panel reads it back out ("fetch the OTP") and
- * relays it out of band. There is no pre-generated pool - every challenge gets
- * its own code - so the database holds one small document per sign-in attempt
- * and never the tens of thousands a fixed pool would.
+ * relays it out of band. Challenges are tagged with a `purpose` ('login' or
+ * 'transfer') so a code minted for one flow can never be replayed in the other.
+ * There is no pre-generated pool - every challenge gets its own code - so the
+ * database holds one small document per attempt.
  */
 
 import { randomInt } from 'node:crypto';
@@ -38,7 +40,7 @@ function generateCode() {
  * Returns `{ challengeId, otpCode, expiresAt }`; the code is returned so the
  * admin panel can surface it.
  */
-export async function createLoginChallenge(customer) {
+async function createChallenge(customer, purpose) {
   const challengeId = generateToken(18);
   const code = generateCode();
   const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
@@ -48,6 +50,7 @@ export async function createLoginChallenge(customer) {
     customer_id: String(customer.id),
     customer_email: customer.email,
     otp_code: code,
+    purpose,
     status: 'pending',
     attempts: 0,
     created_at: nowIso(),
@@ -59,14 +62,33 @@ export async function createLoginChallenge(customer) {
   return { challengeId, otpCode: code, expiresAt };
 }
 
+/** Mint a code that completes a sign-in. */
+export function createLoginChallenge(customer) {
+  return createChallenge(customer, 'login');
+}
+
+/** Mint a code that authorises a transfer for an already signed-in customer. */
+export function createTransferChallenge(customer) {
+  return createChallenge(customer, 'transfer');
+}
+
 /**
  * Check a code against a pending challenge. On success the challenge is
  * consumed; a wrong code burns an attempt and the challenge fails after
  * `OTP_MAX_ATTEMPTS`.
  */
-export async function verifyLoginChallenge(challengeId, code) {
+async function verifyChallenge(challengeId, code, { purpose, customerId } = {}) {
   const challenge = await getById(C.loginChallenges, challengeId);
   if (!challenge || challenge.status !== 'pending') {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  // A challenge is bound to the flow that minted it and, for transfers, to the
+  // customer who requested it. Neither can be swapped for the other.
+  if ((challenge.purpose ?? 'login') !== purpose) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (customerId !== undefined && String(challenge.customer_id) !== String(customerId)) {
     return { ok: false, reason: 'invalid' };
   }
 
@@ -99,6 +121,16 @@ export async function verifyLoginChallenge(challengeId, code) {
   );
 
   return { ok: true, customerId: challenge.customer_id, otpCode: challenge.otp_code };
+}
+
+/** Complete a sign-in challenge with its code. */
+export function verifyLoginChallenge(challengeId, code) {
+  return verifyChallenge(challengeId, code, { purpose: 'login' });
+}
+
+/** Authorise a transfer: the challenge must belong to the signed-in customer. */
+export function verifyTransferChallenge(challengeId, code, customerId) {
+  return verifyChallenge(challengeId, code, { purpose: 'transfer', customerId });
 }
 
 /** Abandon a challenge (wrong credentials, navigation away). */
@@ -144,10 +176,21 @@ export async function purgeExpiredChallenges() {
 /* Administration                                                             */
 /* -------------------------------------------------------------------------- */
 
-/** Paginated login challenges for the admin panel (newest first). */
-export async function listLoginChallenges({ status = 'all', search, limit = 25, offset = 0 } = {}) {
+const CHALLENGE_PURPOSES = ['login', 'transfer'];
+
+/** Paginated one-time-code challenges for the admin panel (newest first). */
+export async function listChallenges({
+  status = 'all',
+  purpose = 'all',
+  search,
+  limit = 25,
+  offset = 0,
+} = {}) {
   if (status && status !== 'all' && !CHALLENGE_STATUSES.includes(status)) {
     throw badRequest('Unknown challenge status filter.');
+  }
+  if (purpose && purpose !== 'all' && !CHALLENGE_PURPOSES.includes(purpose)) {
+    throw badRequest('Unknown challenge purpose filter.');
   }
 
   const now = nowIso();
@@ -161,10 +204,13 @@ export async function listLoginChallenges({ status = 'all', search, limit = 25, 
     return { ...row, status: effective };
   });
   if (status && status !== 'all') rows = rows.filter((row) => row.status === status);
+  if (purpose && purpose !== 'all') {
+    rows = rows.filter((row) => (row.purpose ?? 'login') === purpose);
+  }
   if (search) {
     const needle = String(search).toLowerCase();
     rows = rows.filter((row) =>
-      [row.customer_email, row.otp_code, row.customer_id]
+      [row.customer_email, row.otp_code, row.customer_id, row.purpose]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle)),
     );
@@ -189,7 +235,18 @@ export async function otpStats() {
   } catch {
     // Count anyway: a transient database hiccup must not break the page.
   }
-  const pending = await coll(C.loginChallenges).where('status', '==', 'pending').count().get();
+  const pending = await coll(C.loginChallenges).where('status', '==', 'pending').get();
+  let pendingSignIn = 0;
+  let pendingTransfer = 0;
+  pending.forEach((doc) => {
+    if ((doc.data().purpose ?? 'login') === 'transfer') pendingTransfer += 1;
+    else pendingSignIn += 1;
+  });
   const total = await coll(C.loginChallenges).count().get();
-  return { pendingChallenges: pending.data().count, totalChallenges: total.data().count };
+  return {
+    pendingChallenges: pending.size,
+    pendingSignIn,
+    pendingTransfer,
+    totalChallenges: total.data().count,
+  };
 }

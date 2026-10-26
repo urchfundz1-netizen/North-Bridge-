@@ -1,13 +1,13 @@
 /**
- * Admin - sign-in codes.
+ * Admin - one-time codes.
  *
- * Because no email or SMS provider is wired up, a customer who reaches the
- * one-time-code step cannot be sent their code. This is the other half of that
- * flow: the code minted for a pending sign-in is shown here so a member of
- * staff can read it back to the customer ("fetch the OTP").
+ * Because no email or SMS provider is wired up, a customer who reaches a
+ * one-time-code step cannot be sent their code. This is the other half of both
+ * flows: the code minted for a pending sign-in or transfer is shown here so a
+ * member of staff can read it back to the customer ("fetch the OTP").
  *
- * Read-only on purpose. Codes are produced by the sign-in flow and live on the
- * challenge itself; nothing here writes to the database.
+ * Read-only on purpose. Codes are produced by the sign-in and transfer flows
+ * and live on the challenge itself; nothing here writes to the database.
  */
 
 import { useState } from 'react';
@@ -40,11 +40,22 @@ const CHALLENGE_FILTERS = [
   { value: 'failed', label: 'Failed' },
 ];
 
+const PURPOSE_FILTERS = [
+  { value: 'all', label: 'All code types' },
+  { value: 'login', label: 'Sign-in' },
+  { value: 'transfer', label: 'Transfer' },
+];
+
 const CHALLENGE_TONES = {
   pending: 'warning',
   consumed: 'success',
   expired: 'neutral',
   failed: 'danger',
+};
+
+const PURPOSE_LABELS = {
+  login: 'Sign-in',
+  transfer: 'Transfer',
 };
 
 export default function AdminOtpPage() {
@@ -56,6 +67,7 @@ export default function AdminOtpPage() {
 
   const page = Math.max(1, Number(params.get('p')) || 1);
   const status = params.get('s') ?? 'pending';
+  const purpose = params.get('t') ?? 'all';
 
   const setParam = (key, value, pageKey) => {
     const next = new URLSearchParams(params);
@@ -67,8 +79,8 @@ export default function AdminOtpPage() {
 
   const stats = useAsync(() => adminApi.otpStats(), []);
   const challenges = useAsync(
-    () => adminApi.otpChallenges({ status, search, ...pageParams(page, LIMIT) }),
-    [status, search, page],
+    () => adminApi.otpChallenges({ status, purpose, search, ...pageParams(page, LIMIT) }),
+    [status, purpose, search, page],
   );
 
   const copyCode = async (code) => {
@@ -94,6 +106,17 @@ export default function AdminOtpPage() {
             {copied === row.code ? 'Copied' : 'Copy'}
           </Button>
         </span>
+      ),
+    },
+    {
+      key: 'purpose',
+      header: 'Type',
+      render: (row) => (
+        <StatusBadge
+          status={row.purpose}
+          tone={row.purpose === 'transfer' ? 'info' : 'success'}
+          label={PURPOSE_LABELS[row.purpose] ?? 'Sign-in'}
+        />
       ),
     },
     {
@@ -141,8 +164,8 @@ export default function AdminOtpPage() {
     <AppShell variant="admin">
       <div className="container page">
         <PageHeader
-          title="Sign-in codes"
-          subtitle="Read back the one-time code for a customer who is signing in, then relay it to them."
+          title="One-time codes"
+          subtitle="Read back the one-time code for a customer who is signing in or authorising a transfer, then relay it to them."
         />
 
         {stats.data ? (
@@ -150,18 +173,28 @@ export default function AdminOtpPage() {
             <Stat
               label="Awaiting a code"
               value={stats.data.pendingChallenges}
+              hint="Pending sign-ins and transfers"
+            />
+            <Stat
+              label="Sign-in codes"
+              value={stats.data.pendingSignIn}
               hint="Pending sign-in attempts"
+            />
+            <Stat
+              label="Transfer codes"
+              value={stats.data.pendingTransfer}
+              hint="Pending transfer authorisations"
             />
             <Stat
               label="Total attempts"
               value={stats.data.totalChallenges}
-              hint="All sign-in challenges"
+              hint="All one-time codes"
             />
           </div>
         ) : null}
 
         {/* ---- Challenges ---- */}
-        <SectionTitle>Sign-in attempts</SectionTitle>
+        <SectionTitle>Code requests</SectionTitle>
         <AsyncBoundary loading={challenges.loading} error={challenges.error} onRetry={challenges.reload}>
           <Card bodyClassName="p0">
             <div className="filter-bar" style={{ padding: 'var(--space-4) var(--space-5)', marginBottom: 0 }}>
@@ -176,9 +209,18 @@ export default function AdminOtpPage() {
                     setParam('q', event.target.value, 'p');
                   }}
                   placeholder="Email, code or customer id"
-                  aria-label="Search sign-in attempts"
+                  aria-label="Search one-time codes"
                 />
               </div>
+
+              <SelectField
+                label=""
+                aria-label="Filter by code type"
+                value={purpose}
+                onChange={(event) => setParam('t', event.target.value, 'p')}
+                options={PURPOSE_FILTERS}
+                className="mb-0"
+              />
 
               <SelectField
                 label=""
@@ -194,7 +236,7 @@ export default function AdminOtpPage() {
               columns={columns}
               rows={challenges.data?.items ?? []}
               rowKey={(row) => row.challengeId}
-              empty="No sign-in attempts match these filters."
+              empty="No one-time codes match these filters."
               footer={
                 <Pagination
                   page={challenges.data?.page ?? 1}

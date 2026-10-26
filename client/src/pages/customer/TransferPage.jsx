@@ -34,7 +34,7 @@ import { customerApi, parseAmount } from '../../api/client.js';
 import { useAsync, useAction } from '../../lib/hooks.js';
 import { TransferSuccess } from '../../components/TransferSuccess.jsx';
 import { FrozenTransferNotice } from '../../components/FrozenTransferNotice.jsx';
-import { formatCents, TRANSFER_TYPE_OPTIONS } from '../../lib/format.js';
+import { formatCents, formatDateTime, TRANSFER_TYPE_OPTIONS } from '../../lib/format.js';
 import { useSession } from '../../context/SessionContext.jsx';
 
 const STEPS = ['Recipient', 'Amount', 'Confirm'];
@@ -62,6 +62,8 @@ export default function TransferPage() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [pin, setPin] = useState('');
   const [quote, setQuote] = useState(null);
+  const [otp, setOtp] = useState(null);
+  const [otpCode, setOtpCode] = useState('');
   const [created, setCreated] = useState(null);
   const [autoFilled, setAutoFilled] = useState(false);
   const [autoFillBankName, setAutoFillBankName] = useState(null);
@@ -79,6 +81,21 @@ export default function TransferPage() {
 
   const [fetchQuote, quoting, quoteError] = useAction(customerApi.quoteTransfer);
   const [submitTransfer, submitting, submitError] = useAction(customerApi.createTransfer);
+  const [requestOtp, requestingOtp, otpError] = useAction(customerApi.requestTransferOtp);
+
+  /**
+   * Ask the server for a fresh code. The response deliberately does not contain
+   * the code itself; a member of staff reads it from the admin console and
+   * relays it, exactly like the sign-in code.
+   */
+  const beginOtp = async () => {
+    setOtp(null);
+    setOtpCode('');
+    const result = await requestOtp();
+    if (result?.challengeId) {
+      setOtp({ challengeId: result.challengeId, expiresAt: result.expiresAt });
+    }
+  };
 
   // A fresh idempotency key per attempt, reused if a retry is needed.
   useEffect(() => {
@@ -226,13 +243,17 @@ export default function TransferPage() {
     if (!result?.quote) return;
     setQuote(result.quote);
     setStep(3);
+    beginOtp();
   };
 
   const confirm = async (event) => {
     event.preventDefault();
+    if (!otp?.challengeId) return;
     const result = await submitTransfer({
       ...quotePayload(form),
       transferPin: pin,
+      otpChallengeId: otp.challengeId,
+      otpCode,
       idempotencyKey: idempotencyKeyRef.current,
     });
     if (!result?.transfer) return;
@@ -601,6 +622,54 @@ export default function TransferPage() {
                   inputClassName="pin-input"
                   placeholder="0000"
                 />
+
+                <div className="divider" />
+
+                <h2 className="text-md mb-2">One-time code</h2>
+
+                {otpError ? (
+                  <Alert tone="danger" className="mb-3" title="Could not request a code">
+                    {otpError.message}
+                  </Alert>
+                ) : null}
+
+                {otp ? (
+                  <Alert tone="info" className="mb-3" title="Code requested">
+                    Ask a Northbridge representative to read the 6-digit code for this transfer from
+                    the admin console, then enter it below.
+                    {otp.expiresAt ? ` It expires at ${formatDateTime(otp.expiresAt)}.` : ''}
+                  </Alert>
+                ) : otpError ? null : (
+                  <Alert tone="warning" className="mb-3" title="One-time code needed">
+                    A code must be requested before this transfer can be submitted.
+                  </Alert>
+                )}
+
+                <TextField
+                  label="One-time code"
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputClassName="mono"
+                  style={{ letterSpacing: '0.3em' }}
+                  placeholder="000000"
+                  hint="The code is single-use and expires after 10 minutes."
+                />
+
+                <div className="row gap-2 mt-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={beginOtp}
+                    loading={requestingOtp}
+                    disabled={submitting}
+                  >
+                    {otp ? 'Request a new code' : 'Request a code'}
+                  </Button>
+                </div>
               </div>
 
               <div className="card__footer">
@@ -613,7 +682,7 @@ export default function TransferPage() {
                     variant="accent"
                     icon={IconLock}
                     loading={submitting}
-                    disabled={pin.length !== 4}
+                    disabled={pin.length !== 4 || otpCode.length !== 6 || !otp?.challengeId}
                   >
                     Confirm transfer
                   </Button>

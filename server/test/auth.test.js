@@ -34,6 +34,13 @@ after(async () => {
   await destroyTestApp();
 });
 
+/** Request a transfer code and read it back the way the admin console does. */
+async function transferOtp(client) {
+  const response = await client.post('/api/transfers/otp', {});
+  const challenge = await getLoginChallenge(response.body.challengeId);
+  return { otpChallengeId: response.body.challengeId, otpCode: challenge.otp_code };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Customer authentication                                                    */
 /* -------------------------------------------------------------------------- */
@@ -658,6 +665,7 @@ describe('bank catalogue', () => {
       recipientRoutingNumber: 'AIBK',
       amount: '25.00',
       transferPin: '4321',
+      ...(await transferOtp(customerClient)),
     });
     assert.equal(transfer.status, 201);
     assert.equal(transfer.body.transfer.recipient.bank, 'Test Trust Bank');
@@ -671,6 +679,7 @@ describe('bank catalogue', () => {
       recipientRoutingNumber: 'AIBK9311',
       amount: '25.00',
       transferPin: '4321',
+      ...(await transferOtp(customerClient)),
     });
     assert.equal(badRouting.status, 422);
   });
@@ -759,6 +768,7 @@ describe('bank catalogue', () => {
       recipientRoutingNumber: '1234',
       amount: '10.00',
       transferPin: '4321',
+      ...(await transferOtp(customerClient)),
     });
     assert.equal(transfer.status, 422);
   });
@@ -787,6 +797,7 @@ describe('bank catalogue', () => {
       recipientRoutingNumber: '123456789',
       amount: '40.00',
       transferPin: '4321',
+      ...(await transferOtp(customerClient)),
     });
 
     await adminClient.post(`/api/admin/transfers/${transfer.body.transfer.id}/approve`, {});

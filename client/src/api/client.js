@@ -233,6 +233,7 @@ export const customerApi = {
     http.get(`/api/account/beneficiaries/lookup${qs({ accountNumber })}`),
 
   quoteTransfer: (payload) => http.post('/api/transfers/quote', payload),
+  requestTransferOtp: () => http.post('/api/transfers/otp', {}),
   createTransfer: (payload) => http.post('/api/transfers', payload),
   transfers: async (params) => paginated(await http.get(`/api/transfers${qs(params)}`)),
   transfer: (id) => http.get(`/api/transfers/${id}`),

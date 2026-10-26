@@ -60,8 +60,8 @@ const ADMIN_PRIMARY = [
   // the desktop header; the overview tiles deep-link into it as well.
   { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer, hideOnBottomNav: true },
   { to: '/admin/banks', label: 'Banks', icon: IconBank },
-  // The one-time code a customer needs to finish signing in lives here.
-  { to: '/admin/otp', label: 'Sign-in codes', icon: IconShield },
+  // The one-time codes a customer needs to sign in or authorise a transfer.
+  { to: '/admin/otp', label: 'One-time codes', icon: IconShield },
   { to: '/admin/audit', label: 'Audit', icon: IconHistory },
   { to: '/admin/settings', label: 'Settings', icon: IconSettings },
 ];

@@ -241,15 +241,16 @@ export function paginated(rows, total, { limit, offset }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* One-time sign-in codes                                                     */
+/* One-time codes                                                             */
 /* -------------------------------------------------------------------------- */
 
-/** A sign-in challenge, carrying the code an admin can relay. */
+/** A one-time-code challenge, carrying the code an admin can relay. */
 export function toLoginChallenge(row) {
   return {
     challengeId: row.challenge_id,
     customerId: row.customer_id ?? null,
     customerEmail: row.customer_email ?? null,
+    purpose: row.purpose ?? 'login',
     code: row.otp_code,
     status: row.status,
     attempts: row.attempts ?? 0,

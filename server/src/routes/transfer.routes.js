@@ -27,6 +27,8 @@ import {
   listCustomerTransfers,
   findTransferForCustomer,
 } from '../services/transfer-service.js';
+import { createTransferChallenge, verifyTransferChallenge } from '../services/otp-service.js';
+import { AUDIT_ACTIONS, recordAudit } from '../services/audit.js';
 import {
   receiptForCustomerTransfer,
   listCustomerReceipts,
@@ -42,6 +44,13 @@ import { formatCents } from '../core/money.js';
 const router = Router();
 
 router.use(attachAuth('customer'), requireCustomer);
+
+const TRANSFER_OTP_MESSAGES = {
+  invalid: 'This one-time code is invalid or has already been used. Request a new code.',
+  expired: 'This one-time code has expired. Request a new code.',
+  mismatch: 'Incorrect one-time code. Check the code and try again.',
+  too_many_attempts: 'Too many incorrect codes. Request a new code.',
+};
 
 /* -------------------------------------------------------------------------- */
 /* Fee quote                                                                  */
@@ -83,6 +92,44 @@ router.post(
 );
 
 /* -------------------------------------------------------------------------- */
+/* One-time code                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Request the 6-digit code that authorises the next transfer.
+ *
+ * The code is never returned here: it is read back from the admin console and
+ * relayed to the customer, exactly like the sign-in code. Minting a new code
+ * does not invalidate an older pending one, but only the code supplied with the
+ * final submission is consumed.
+ */
+router.post(
+  '/otp',
+  requireCsrf,
+  asyncHandler(async (req, res) => {
+    const customer = await findCustomerById(req.auth.actorId);
+    const challenge = await createTransferChallenge(customer);
+
+    await recordAudit({
+      actorType: 'customer',
+      actorId: customer.id,
+      actorEmail: customer.email,
+      action: AUDIT_ACTIONS.TRANSFER_OTP_REQUESTED,
+      targetType: 'customer',
+      targetId: customer.id,
+      targetLabel: customer.account_number,
+      metadata: { stage: 'transfer_otp_requested' },
+      request: req,
+    });
+
+    res.status(201).json({
+      challengeId: challenge.challengeId,
+      expiresAt: challenge.expiresAt,
+    });
+  }),
+);
+
+/* -------------------------------------------------------------------------- */
 /* Create                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -93,7 +140,11 @@ router.post(
  *   1. Validate shape (schema).
  *   2. Verify the transfer PIN - no money-affecting state changes before this.
  *   3. Validate business rules (limits, bank support, funds).
- *   4. Persist atomically.
+ *   4. Verify and consume the one-time code requested for this transfer.
+ *   5. Persist atomically.
+ *
+ * The code is checked after validation so a rejected request does not burn the
+ * customer's code and force them to ask an administrator for another one.
  */
 router.post(
   '/',
@@ -125,6 +176,15 @@ router.post(
         disabled: 'Your account has been disabled. Please contact Northbridge support.',
       };
       throw forbidden(messages[customer.status] ?? 'This account cannot make transfers.');
+    }
+
+    const otpResult = await verifyTransferChallenge(
+      req.body.otpChallengeId,
+      req.body.otpCode,
+      customer.id,
+    );
+    if (!otpResult.ok) {
+      throw forbidden(TRANSFER_OTP_MESSAGES[otpResult.reason] ?? TRANSFER_OTP_MESSAGES.invalid);
     }
 
     const { transfer, created, settledNow } = await createTransfer({
