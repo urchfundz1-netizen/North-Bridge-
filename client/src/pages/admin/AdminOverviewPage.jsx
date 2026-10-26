@@ -20,7 +20,6 @@ import { useAsync } from '../../lib/hooks.js';
 import { useSession } from '../../context/SessionContext.jsx';
 import { formatCents, formatDateTime, humanize } from '../../lib/format.js';
 import {
-  IconArrowRight,
   IconChart,
   IconShield,
   IconTransfer,
@@ -208,12 +207,6 @@ export default function AdminOverviewPage() {
                 Settings
               </Link>
             </div>
-
-            <p className="text-xs subtle">
-              <IconArrowRight size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> Every
-              figure on this page comes from a single <code className="mono">/api/admin/overview</code>{' '}
-              read. Actions are performed on the detail screens, not here.
-            </p>
           </div>
         </AsyncBoundary>
       </div>

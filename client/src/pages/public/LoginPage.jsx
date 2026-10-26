@@ -12,8 +12,8 @@
  * second-guess when a lockout has been applied.
  */
 
-import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthLayout } from './AuthLayout.jsx';
 import { PublicHeader } from '../../components/Layout.jsx';
 import { Alert, Button, SecretField, TextField } from '../../components/ui.jsx';
@@ -22,6 +22,7 @@ import { useAction } from '../../lib/hooks.js';
 import { IconArrowLeft, IconLock, IconMail, IconShield } from '../../components/icons.jsx';
 
 const OTP_LENGTH = 6;
+const CODE_TTL_SECONDS = 5 * 60;
 
 export default function LoginPage() {
   const session = useSession();
@@ -31,11 +32,28 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [challenge, setChallenge] = useState(null);
   const [code, setCode] = useState('');
+  const [secondsLeft, setSecondsLeft] = useState(CODE_TTL_SECONDS);
 
   const [runLogin, loginPending, loginError, resetLoginError] = useAction(session.login);
   const [runVerify, verifyPending, verifyError, resetVerifyError] = useAction(
     session.verifyLoginOtp,
   );
+
+  // The countdown restarts whenever a challenge is issued, including a resend.
+  useEffect(() => {
+    if (!challenge) return undefined;
+    setSecondsLeft(CODE_TTL_SECONDS);
+    const timer = window.setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [challenge]);
 
   const redirectTo = location.state?.from ?? '/dashboard';
 
@@ -70,9 +88,24 @@ export default function LoginPage() {
 
   const submitCode = async (event) => {
     event.preventDefault();
-    if (code.length !== OTP_LENGTH) return;
+    if (code.length !== OTP_LENGTH || codeExpired) return;
     const result = await runVerify(challenge.challengeId, code);
     if (!result) return;
+    finish(result);
+  };
+
+  // Re-running the password step reserves a fresh code for the same account
+  // and returns a new challenge id, which restarts the countdown.
+  const resendCode = async () => {
+    resetVerifyError();
+    resetLoginError();
+    const result = await runLogin(form);
+    if (!result) return;
+    if (result.otpRequired) {
+      setChallenge({ challengeId: result.challengeId, email: result.email });
+      setCode('');
+      return;
+    }
     finish(result);
   };
 
@@ -85,6 +118,8 @@ export default function LoginPage() {
   const fieldErrors = loginError?.fieldErrors ?? {};
   const codeError = verifyError?.fieldErrors?.code;
   const onCodeStep = Boolean(challenge);
+  const codeExpired = secondsLeft <= 0;
+  const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
 
   return (
     <div className="app-shell">
@@ -108,6 +143,7 @@ export default function LoginPage() {
           {onCodeStep ? (
             <>
               {verifyError ? <Alert tone="danger">{verifyError.message}</Alert> : null}
+              {loginError ? <Alert tone="danger">{loginError.message}</Alert> : null}
 
               <form onSubmit={submitCode} noValidate>
                 <TextField
@@ -124,9 +160,10 @@ export default function LoginPage() {
                     setCode(event.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH));
                   }}
                   error={codeError}
-                  hint="The code expires 10 minutes after you sign in."
+                  hint={codeExpired ? undefined : `Expires in ${countdown}`}
                   placeholder="000000"
                   icon={IconShield}
+                  disabled={codeExpired}
                   autoFocus
                 />
 
@@ -135,13 +172,27 @@ export default function LoginPage() {
                   variant="primary"
                   size="lg"
                   loading={verifyPending}
-                  disabled={code.length !== OTP_LENGTH}
+                  disabled={code.length !== OTP_LENGTH || codeExpired}
                   className="btn--block"
                   icon={IconLock}
                 >
                   Verify and sign in
                 </Button>
               </form>
+
+              {codeExpired ? (
+                <p className="text-sm muted mt-4 text-center">
+                  Your code has expired.{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={resendCode}
+                    disabled={loginPending}
+                  >
+                    {loginPending ? 'Resending…' : 'Resend code'}
+                  </button>
+                </p>
+              ) : null}
 
               <p className="text-sm muted mt-6 text-center">
                 <button type="button" className="link-button" onClick={useAnotherAccount}>
@@ -198,13 +249,6 @@ export default function LoginPage() {
                   Continue
                 </Button>
               </form>
-
-              <p className="text-sm muted mt-6 text-center">
-                Staff member?{' '}
-                <Link to="/admin/login" style={{ fontWeight: 600 }}>
-                  Open the admin console
-                </Link>
-              </p>
             </>
           )}
         </AuthLayout>

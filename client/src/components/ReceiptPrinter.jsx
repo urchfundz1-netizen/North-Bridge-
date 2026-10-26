@@ -453,60 +453,72 @@ function receiptSheetHtml(payload, receipt) {
  * `<foreignObject>`, and drawn onto a canvas. That keeps the image identical to
  * the paper on screen without pulling in an HTML-to-image dependency.
  */
+export function createReceiptImageBlob(payload, receipt) {
+  return new Promise((resolve) => {
+    const host = document.createElement('div');
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText = 'position: fixed; left: -10000px; top: 0;';
+
+    const sheetHost = document.createElement('div');
+    sheetHost.style.cssText = 'width: 80mm; background: #fff;';
+    sheetHost.innerHTML = `<style>${RECEIPT_IMAGE_CSS}</style>${receiptSheetHtml(payload, receipt)}`;
+
+    host.appendChild(sheetHost);
+    document.body.appendChild(host);
+
+    const width = Math.ceil(sheetHost.getBoundingClientRect().width);
+    const height = Math.ceil(sheetHost.scrollHeight);
+    const markup = new XMLSerializer().serializeToString(sheetHost);
+    document.body.removeChild(host);
+
+    if (!width || !height) {
+      resolve(null);
+      return;
+    }
+
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+      `viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}">` +
+      `${markup}</foreignObject></svg>`;
+
+    const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+    const image = new Image();
+
+    image.onload = () => {
+      const scale = 3;
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(svgUrl);
+
+      canvas.toBlob((blob) => resolve(blob), 'image/png');
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      resolve(null);
+    };
+    image.src = svgUrl;
+  });
+}
+
 function downloadReceiptImage(payload, receipt) {
-  const host = document.createElement('div');
-  host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = 'position: fixed; left: -10000px; top: 0;';
-
-  const sheetHost = document.createElement('div');
-  sheetHost.style.cssText = 'width: 80mm; background: #fff;';
-  sheetHost.innerHTML = `<style>${RECEIPT_IMAGE_CSS}</style>${receiptSheetHtml(payload, receipt)}`;
-
-  host.appendChild(sheetHost);
-  document.body.appendChild(host);
-
-  const width = Math.ceil(sheetHost.getBoundingClientRect().width);
-  const height = Math.ceil(sheetHost.scrollHeight);
-  const markup = new XMLSerializer().serializeToString(sheetHost);
-  document.body.removeChild(host);
-
-  if (!width || !height) return;
-
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-    `viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}">` +
-    `${markup}</foreignObject></svg>`;
-
-  const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  const image = new Image();
-
-  image.onload = () => {
-    const scale = 3;
-    const canvas = document.createElement('canvas');
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-
-    const context = canvas.getContext('2d');
-    context.fillStyle = '#fff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(svgUrl);
-
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const pngUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = pngUrl;
-      link.download = `northbridge-receipt-${payload.receiptNumber ?? receipt?.receiptNumber ?? 'receipt'}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(pngUrl);
-    }, 'image/png');
-  };
-
-  image.onerror = () => URL.revokeObjectURL(svgUrl);
-  image.src = svgUrl;
+  createReceiptImageBlob(payload, receipt).then((blob) => {
+    if (!blob) return;
+    const pngUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = pngUrl;
+    link.download = `northbridge-receipt-${payload.receiptNumber ?? receipt?.receiptNumber ?? 'receipt'}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(pngUrl);
+  });
 }
 
 function escapeHtml(value) {

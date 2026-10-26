@@ -43,12 +43,6 @@ export default function AdminLoginPage() {
           subtitle="Staff access only"
           variant="dark"
           avatar={IconShield}
-          footer={
-            <p className="text-xs subtle text-center">
-              Every action taken in this console is recorded in the audit log with your staff
-              account, the time and the reason you give.
-            </p>
-          }
         >
           {error ? (
             <Alert tone="danger" title="Sign-in failed">

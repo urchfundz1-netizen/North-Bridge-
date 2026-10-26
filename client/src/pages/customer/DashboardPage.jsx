@@ -322,12 +322,6 @@ export default function DashboardPage() {
                         <dt className="datalist__label">Processing fee</dt>
                         <dd className="datalist__value">{formatCents(rules?.transferFeeCents)}</dd>
                       </div>
-                      <div className="datalist__item">
-                        <dt className="datalist__label">Approval</dt>
-                        <dd className="datalist__value">
-                          {rules?.requireApproval ? 'Required before funds move' : 'Immediate'}
-                        </dd>
-                      </div>
                     </dl>
                     <p className="text-xs subtle mt-4">
                       Need to stop outgoing payments? You can{' '}

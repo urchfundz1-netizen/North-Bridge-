@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { AppShell } from '../../components/Layout.jsx';
 import {
   Alert,
@@ -32,7 +32,7 @@ import {
 import { IconArrowLeft, IconArrowRight, IconLock } from '../../components/icons.jsx';
 import { customerApi, parseAmount } from '../../api/client.js';
 import { useAsync, useAction } from '../../lib/hooks.js';
-import { Receipt } from '../../components/Receipt.jsx';
+import { TransferSuccess } from '../../components/TransferSuccess.jsx';
 import { formatCents, TRANSFER_TYPE_OPTIONS } from '../../lib/format.js';
 import { useSession } from '../../context/SessionContext.jsx';
 
@@ -55,7 +55,6 @@ const INITIAL_FORM = {
 
 export default function TransferPage() {
   const session = useSession();
-  const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(INITIAL_FORM);
@@ -247,37 +246,7 @@ export default function TransferPage() {
     return (
       <AppShell variant="customer">
         <div className="container page" style={{ maxWidth: 680 }}>
-          {/*
-            Nothing but the receipt. The customer has just confirmed their PIN
-            and asked to be handed the document, so the summary card, the
-            step-complete heading and the "funds have not left your account yet"
-            alert are all deliberately absent: every one of them restated a
-            field the receipt already carries, and the banner in particular
-            duplicated the footer's warning in a second place.
-          */}
-          <Receipt receipt={receipt} />
-
-          <div className="row wrap gap-3 mt-6" style={{ justifyContent: 'center' }}>
-            <Button variant="primary" icon={IconArrowRight} onClick={() => navigate(`/transfers/${transfer.id}`)}>
-              View transfer
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setCreated(null);
-                setForm(INITIAL_FORM);
-                setPin('');
-                setQuote(null);
-                setAutoFilled(false);
-                setAutoFillBankName(null);
-                autoFillActiveRef.current = false;
-                lastLookupNumberRef.current = '';
-                setStep(1);
-              }}
-            >
-              Send another
-            </Button>
-          </div>
+          <TransferSuccess transfer={transfer} receipt={receipt} />
         </div>
       </AppShell>
     );
@@ -293,11 +262,9 @@ export default function TransferPage() {
             Back to overview
           </Link>
           <h1 className="text-2xl">Send a transfer</h1>
-          <p className="muted mt-1">
-            {canTransfer
-              ? 'You will see the exact total leaving your account before anything is submitted.'
-              : 'Outgoing transfers are currently unavailable on your account.'}
-          </p>
+          {!canTransfer ? (
+            <p className="muted mt-1">Outgoing transfers are currently unavailable on your account.</p>
+          ) : null}
         </header>
 
         {!canTransfer ? (
@@ -514,11 +481,6 @@ export default function TransferPage() {
                         </Alert>
                       ) : null}
 
-                      <p className="text-sm muted mt-3">
-                        {quote.requiresApproval
-                          ? 'Northbridge reviews every transfer. Funds stay in your account until it is approved.'
-                          : 'This transfer will settle immediately.'}
-                      </p>
                     </div>
                   </div>
                 ) : null}
@@ -585,10 +547,6 @@ export default function TransferPage() {
                       <div className="datalist__item">
                         <dt className="datalist__label">Amount</dt>
                         <dd className="datalist__value">{quote?.amountFormatted}</dd>
-                      </div>
-                      <div className="datalist__item">
-                        <dt className="datalist__label">Fee</dt>
-                        <dd className="datalist__value">{quote?.feeFormatted}</dd>
                       </div>
                     </dl>
 

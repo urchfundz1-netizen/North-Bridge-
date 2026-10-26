@@ -10,7 +10,6 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AppShell } from '../../components/Layout.jsx';
 import {
-  Alert,
   AsyncBoundary,
   Card,
   EmptyState,
@@ -137,12 +136,6 @@ export default function AdminTransfersPage() {
               onPageChange={(next) => setParam('page', next)}
             />
           </Card>
-
-          <Alert tone="info" title="Approving is safe to retry">
-            Approval runs in a single database transaction guarded by the transfer&#39;s status. If two
-            staff members approve the same transfer, the second request is told it was already
-            processed instead of deducting the money twice.
-          </Alert>
         </AsyncBoundary>
       </div>
     </AppShell>

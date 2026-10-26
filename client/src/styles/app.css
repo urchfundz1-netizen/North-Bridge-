@@ -3649,3 +3649,145 @@ button.stat:hover {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Transfer success
+
+   The screen shown immediately after a transfer PIN is accepted. It reports
+   the outcome first and keeps the printed document behind an explicit action,
+   so the receipt printer is only opened when the customer asks for it.
+   ========================================================================== */
+
+.transfer-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(2rem, 7vh, 5rem) var(--space-4) var(--space-16);
+  background: var(--white);
+  border-radius: var(--radius-xl);
+}
+
+.transfer-success__badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 144px;
+  height: 144px;
+  margin-bottom: var(--space-12);
+  border-radius: var(--radius-full);
+  background: #16a34a;
+  color: var(--white);
+  box-shadow:
+    0 0 0 12px #bbf7d0,
+    0 0 0 20px #dcfce7,
+    0 18px 40px -18px rgba(22, 163, 74, 0.55);
+}
+
+.transfer-success__badge-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 112px;
+  border-radius: var(--radius-full);
+  background: #15803d;
+}
+
+.transfer-success__title {
+  margin: 0 0 var(--space-4);
+  font-size: clamp(2.25rem, 6vw, 3rem);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink-900);
+}
+
+.transfer-success__copy {
+  margin: 0;
+  max-width: 30rem;
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  color: var(--ink-700);
+}
+
+.transfer-success__copy strong {
+  color: var(--ink-900);
+  font-weight: 700;
+}
+
+.transfer-success__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-10);
+  margin-top: var(--space-12);
+}
+
+.transfer-success__action {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-lg);
+  color: var(--ink-800);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.transfer-success__action:hover {
+  color: var(--navy-600);
+  transform: translateY(-1px);
+}
+
+.transfer-success__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.transfer-success__action-icon {
+  flex: none;
+  color: var(--navy-600);
+}
+
+.transfer-success__links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+@media (max-width: 639px) {
+  .transfer-success {
+    padding: var(--space-10) var(--space-3) var(--space-12);
+  }
+
+  .transfer-success__badge {
+    width: 120px;
+    height: 120px;
+    margin-bottom: var(--space-8);
+  }
+
+  .transfer-success__badge-inner {
+    width: 92px;
+    height: 92px;
+  }
+
+  .transfer-success__copy {
+    font-size: var(--text-md);
+  }
+
+  .transfer-success__actions {
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-top: var(--space-10);
+  }
+}
