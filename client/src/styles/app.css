@@ -3402,11 +3402,12 @@ button.stat:hover {
 .steps {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-bottom: var(--space-5);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding-bottom: var(--space-1);
+  padding: 0 var(--space-1) var(--space-1);
 }
 
 .steps::-webkit-scrollbar {
@@ -3416,24 +3417,45 @@ button.stat:hover {
 .step {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
+  gap: var(--space-1);
+  font-size: var(--text-xs);
   color: var(--ink-500);
   white-space: nowrap;
   font-weight: 500;
+  flex: 0 0 auto;
+}
+
+@media (min-width: 640px) {
+  .steps {
+    gap: var(--space-2);
+    padding-bottom: var(--space-1);
+  }
+
+  .step {
+    font-size: var(--text-sm);
+    gap: var(--space-2);
+  }
 }
 
 .step__dot {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid var(--border-strong);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   flex: 0 0 auto;
   background: var(--surface);
+}
+
+@media (min-width: 640px) {
+  .step__dot {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+  }
 }
 
 .step.is-active {
@@ -3458,10 +3480,16 @@ button.stat:hover {
 }
 
 .step__sep {
-  width: 18px;
+  width: 12px;
   height: 2px;
   background: var(--border-strong);
   flex: 0 0 auto;
+}
+
+@media (min-width: 640px) {
+  .step__sep {
+    width: 18px;
+  }
 }
 
 /* Mobile-first: horizontal scroll container for action tiles */
