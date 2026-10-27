@@ -351,18 +351,46 @@ export default function TransferPage() {
                   </Alert>
                 ) : null}
 
-                <RadioCardGroup
-                  legend="Transfer type"
-                  name="transferType"
-                  value={form.transferType}
-                  onChange={(value) => {
-                    setForm((prev) => ({ ...prev, transferType: value }));
-                    setQuote(null);
-                  }}
-                  options={TRANSFER_TYPE_OPTIONS}
-                  columns={3}
-                  className="mb-4"
-                />
+                {form.transferType ? (
+                  <div className="mb-4">
+                    <div className="fieldset__legend">Transfer type</div>
+                    <div className="radio-card" style={{ justifyContent: 'space-between', cursor: 'default' }}>
+                      <span className="radio-card__body" style={{ alignItems: 'flex-start', textAlign: 'left' }}>
+                        <span className="radio-card__title">
+                          {TRANSFER_TYPE_OPTIONS.find((option) => option.value === form.transferType)?.label}
+                        </span>
+                        {TRANSFER_TYPE_OPTIONS.find((option) => option.value === form.transferType)?.description ? (
+                          <span className="radio-card__desc">
+                            {TRANSFER_TYPE_OPTIONS.find((option) => option.value === form.transferType)?.description}
+                          </span>
+                        ) : null}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setForm((prev) => ({ ...prev, transferType: '' }));
+                          setQuote(null);
+                        }}
+                      >
+                        Change
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <RadioCardGroup
+                    legend="Transfer type"
+                    name="transferType"
+                    value={form.transferType}
+                    onChange={(value) => {
+                      setForm((prev) => ({ ...prev, transferType: value }));
+                      setQuote(null);
+                    }}
+                    options={TRANSFER_TYPE_OPTIONS}
+                    columns={3}
+                    className="mb-4"
+                  />
+                )}
 
                 <TextField
                   label="Recipient account number"
