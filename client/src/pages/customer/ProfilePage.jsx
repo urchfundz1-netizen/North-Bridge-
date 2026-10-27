@@ -258,10 +258,10 @@ export default function ProfilePage() {
               </Card>
 
               <Card title="Security">
-                <p className="text-sm muted">
-                  Your sign-in password and your transfer PIN are separate credentials stored as
-                  separate hashes. Changing one never changes the other.
-                </p>
+              <p className="text-sm muted">
+                Your sign-in password and your transfer PIN are separate credentials stored as separate
+                hashes.
+              </p>
                 <div className="row gap-2 mt-4">
                   <Link className="btn btn--secondary" to="/security">
                     <IconLock size={17} />
