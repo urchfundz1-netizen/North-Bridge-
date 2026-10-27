@@ -36,7 +36,7 @@ export function LedgerRow({ entry, to }) {
       style={to ? undefined : { cursor: 'default' }}
     >
       <span className={`txn__icon ${isCredit ? 'txn__icon--credit' : 'txn__icon--debit'}`}>
-        <Glyph size={18} />
+        <Glyph size={20} />
       </span>
 
       <span className="txn__body">
@@ -90,7 +90,7 @@ export function TransferRow({ transfer, to, onSelect, showCustomer = false }) {
       style={onSelect ? { cursor: 'pointer' } : undefined}
     >
       <span className={`txn__icon ${transfer.status === 'approved' ? 'txn__icon--credit' : 'txn__icon--debit'}`}>
-        {transfer.status === 'approved' ? <IconReceipt size={18} /> : <IconTransfer size={18} />}
+        {transfer.status === 'approved' ? <IconReceipt size={20} /> : <IconTransfer size={20} />}
       </span>
 
       <span className="txn__body">

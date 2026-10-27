@@ -132,21 +132,21 @@ export default function DashboardPage() {
                 <div className="tile-row tile-row--three">
                   <Link className="tile" to="/pay-bills">
                     <span className="tile__icon">
-                      <IconBill size={18} />
+                      <IconBill size={20} />
                     </span>
-                    Pay bills
+                    <span>Pay bills</span>
                   </Link>
                   <Link className="tile" to="/crypto">
                     <span className="tile__icon">
-                      <IconBitcoin size={18} />
+                      <IconBitcoin size={20} />
                     </span>
-                    Crypto
+                    <span>Crypto</span>
                   </Link>
                   <Link className="tile" to="/link-card">
                     <span className="tile__icon">
-                      <IconCard size={18} />
+                      <IconCard size={20} />
                     </span>
-                    Link Card
+                    <span>Link Card</span>
                   </Link>
                 </div>
               </div>

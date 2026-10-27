@@ -363,7 +363,7 @@ function BottomNav({ links }) {
       className={({ isActive }) => `bottom-nav__item ${isActive ? 'is-active' : ''}`}
     >
       <link.icon size={22} className="bottom-nav__icon" />
-      <span>{shortLabel(link.label)}</span>
+      <span className="bottom-nav__label">{shortLabel(link.label)}</span>
     </NavLink>
   );
 

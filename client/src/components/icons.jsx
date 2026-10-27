@@ -279,10 +279,8 @@ export const IconMenu = (p) => (
 
 export const IconBill = (p) => (
   <Icon {...p}>
-    <path d="M7 3.5h7l4 4v13H7V3.5Z" />
-    <path d="M14 3.5v4h4" />
-    <path d="M12 9.5v7" />
-    <path d="M13.6 10.7c-.3-.5-.9-.8-1.6-.8-1 0-1.8.5-1.8 1.3s.8 1.1 1.8 1.3 1.8.5 1.8 1.3-.8 1.3-1.8 1.3c-.7 0-1.3-.3-1.6-.8" />
+    <path d="M6 3h12v18l-2-1-2 1-2-1-2 1-2-1-2 1V3Z" />
+    <path d="M9 7h6M9 11h6M9 15h4" />
   </Icon>
 );
 
