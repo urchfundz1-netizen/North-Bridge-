@@ -361,6 +361,7 @@ export default function TransferPage() {
                   }}
                   options={TRANSFER_TYPE_OPTIONS}
                   columns={3}
+                  className="mb-4"
                 />
 
                 <TextField

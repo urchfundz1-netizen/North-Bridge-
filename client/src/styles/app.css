@@ -1242,42 +1242,56 @@ a.card-summary__item:focus-visible {
   font-weight: 600;
   color: var(--ink-700);
   padding: 0;
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .radio-cards {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   grid-template-columns: 1fr;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 520px) {
   .radio-cards--3 {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 519px) {
+  .radio-cards--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .radio-card {
+    padding: var(--space-3);
   }
 }
 
 .radio-card {
   position: relative;
   display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
-  padding: var(--space-4);
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3) var(--space-2);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   cursor: pointer;
   background: var(--surface);
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  text-align: center;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .radio-card:hover {
   border-color: var(--navy-500);
   background: var(--navy-50);
+  box-shadow: var(--shadow-xs);
 }
 
 .radio-card:has(input:checked) {
   border-color: var(--navy-700);
-  background: var(--navy-100);
+  background: linear-gradient(135deg, var(--navy-100), #f7faff);
+  box-shadow: inset 0 0 0 1px rgba(11, 61, 145, 0.25);
 }
 
 .radio-card:has(input:focus-visible) {
@@ -1286,16 +1300,18 @@ a.card-summary__item:focus-visible {
 }
 
 .radio-card input {
-  margin: 3px 0 0;
-  accent-color: var(--navy-700);
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 .radio-card__body {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 2px;
   min-width: 0;
 }
@@ -1303,11 +1319,13 @@ a.card-summary__item:focus-visible {
 .radio-card__title {
   font-weight: 600;
   color: var(--ink-900);
+  text-align: center;
 }
 
 .radio-card__desc {
   font-size: var(--text-xs);
   color: var(--ink-600);
+  text-align: center;
 }
 
 /* PIN input: fixed-width, centred digits */
