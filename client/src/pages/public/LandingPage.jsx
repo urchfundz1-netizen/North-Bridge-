@@ -22,34 +22,34 @@ import {
 
 const FEATURES = [
   {
-    icon: IconTransfer,
-    title: 'Transfers with a fee you see first',
-    body: 'Every transfer is priced before you commit, so the amount, the processing fee and the total leaving your account are agreed up front — never discovered afterwards.',
-  },
-  {
-    icon: IconShield,
-    title: 'A second secret for money movement',
-    body: 'Moving money needs a transfer PIN as well as your sign-in. The two credentials are stored as separate hashes, so one leaked password cannot authorise a payment.',
-  },
-  {
-    icon: IconReceipt,
-    title: 'Receipts issued on settlement',
-    body: 'Once Northbridge approves a transfer, a receipt is generated automatically and kept as a frozen snapshot, exactly as it read on the day.',
-  },
-  {
     icon: IconChart,
-    title: 'Every balance change is traceable',
-    body: 'Deposits, transfers, fees and adjustments are written to an append-only ledger. Nothing can be quietly edited or deleted after the fact.',
+    title: '24/7 Online & Mobile Banking',
+    body: 'Check balances, view transactions, and manage your accounts anytime, anywhere from your computer or mobile device.',
   },
   {
-    icon: IconLock,
-    title: 'Account controls you can see',
-    body: 'Freeze your own account to stop outgoing payments without losing the ability to sign in and check your balance.',
+    icon: IconTransfer,
+    title: 'Transfers & Bill Pay',
+    body: 'Move money between accounts or pay bills with a clear review screen before you confirm each payment.',
+  },
+  {
+    icon: IconCard,
+    title: 'Debit Card Controls',
+    body: 'Lock or unlock your card, report it lost or stolen, and monitor activity right from your Northbridge portal.',
   },
   {
     icon: IconSparkle,
-    title: 'Built for phones first',
-    body: 'A fixed navigation bar and full-height bottom navigation keep every destination one tap away, on any screen size.',
+    title: 'Account Alerts',
+    body: 'Get notified for purchases, low balances, or unusual activity so you can stay on top of your money.',
+  },
+  {
+    icon: IconReceipt,
+    title: 'eStatements & Transaction History',
+    body: 'Go paperless with secure, downloadable statements and easy access to your full transaction history.',
+  },
+  {
+    icon: IconShield,
+    title: 'Fraud Protection',
+    body: 'Proactive monitoring helps detect suspicious activity and keeps your accounts protected around the clock.',
   },
 ];
 
@@ -92,8 +92,19 @@ export default function LandingPage() {
                 className="text-lg mt-4"
                 style={{ color: 'rgba(255,255,255,0.78)', maxWidth: '52ch' }}
               >
-                Northbridge gives you one clear view of your money. Send a transfer, watch it clear,
-                and download a receipt — with every step explained before you confirm it.
+                At Northbridge Bank, integrity and your trust come first. We are committed to secure, reliable banking and exceptional customer service.
+              </p>
+              <p
+                className="text-lg mt-3"
+                style={{ color: 'rgba(255,255,255,0.9)', maxWidth: '52ch', fontWeight: 600 }}
+              >
+                Bank with confidence. Choose Northbridge Bank today!
+              </p>
+              <p
+                className="text-md mt-2"
+                style={{ color: 'rgba(255,255,255,0.85)', maxWidth: '52ch', fontStyle: 'italic' }}
+              >
+                Northbridge Bank — Your Trust, Our Commitment.
               </p>
 
               <div className="hero__actions">
@@ -164,9 +175,9 @@ export default function LandingPage() {
         <section className="section" id="features">
           <div className="container">
             <div className="text-center" style={{ maxWidth: '60ch', margin: '0 auto var(--space-10)' }}>
-              <h2 className="text-2xl">How Northbridge works</h2>
+              <h2 className="text-2xl">Banking Made Simple</h2>
               <p className="muted mt-3">
-                Six commitments that shape every screen in the portal.
+                The essentials you'd expect from a trusted bank.
               </p>
             </div>
 
@@ -184,26 +195,25 @@ export default function LandingPage() {
           </div>
         </section>
 
+
+
         <section className="section" id="security" style={{ background: 'var(--navy-50)' }}>
           <div className="container">
             <div className="card" style={{ background: 'var(--white)' }}>
               <div className="card__body">
                 <div className="row wrap gap-6" style={{ alignItems: 'center' }}>
                   <div className="grow" style={{ minWidth: '260px' }}>
-                    <h2 className="text-xl">Security is structural, not decorative</h2>
+                    <h2 className="text-xl">Your Security Comes First</h2>
                     <p className="muted mt-3">
-                      Sessions live in <code className="mono">httpOnly</code> cookies that scripts cannot
-                      read. Passwords and transfer PINs are stored with scrypt and never leave the
-                      server. Every state-changing request carries a CSRF token, and every
-                      administrative action is written to an append-only audit log.
+                      At Northbridge Bank, we use bank-grade security measures to help safeguard your accounts and personal information. From encrypted connections to proactive fraud monitoring, your peace of mind is always our priority.
                     </p>
                     <div className="row wrap gap-2 mt-4">
-                      <span className="badge badge--info">httpOnly sessions</span>
-                      <span className="badge badge--info">scrypt hashing</span>
-                      <span className="badge badge--info">CSRF protection</span>
-                      <span className="badge badge--info">Append-only ledger</span>
-                      <span className="badge badge--info">Rate limiting</span>
-                      <span className="badge badge--info">Audit trail</span>
+                      <span className="badge badge--info">256-bit Encryption</span>
+                      <span className="badge badge--info">Multi-Factor Authentication</span>
+                      <span className="badge badge--info">Fraud Monitoring</span>
+                      <span className="badge badge--info">Secure Logins</span>
+                      <span className="badge badge--info">Card Fraud Alerts</span>
+                      <span className="badge badge--info">Zero Liability Protection</span>
                     </div>
                   </div>
 
