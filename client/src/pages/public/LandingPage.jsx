@@ -10,6 +10,7 @@ import { PublicFooter, PublicHeader } from '../../components/Layout.jsx';
 import { LinkButton } from '../../components/ui.jsx';
 import {
   IconArrowRight,
+  IconBank,
   IconChart,
   IconLock,
   IconReceipt,
@@ -60,7 +61,14 @@ export default function LandingPage() {
       <PublicHeader />
 
       <main id="main" className="app-main">
-        <section className="hero">
+        <section className="hero hero--animated">
+          <div className="hero__bg" aria-hidden="true">
+            <span className="hero__bg-orb hero__bg-orb--1" />
+            <span className="hero__bg-orb hero__bg-orb--2" />
+            <span className="hero__bg-orb hero__bg-orb--3" />
+            <IconBank size={320} className="hero__bg-icon hero__bg-icon--bank" />
+            <IconShield size={220} className="hero__bg-icon hero__bg-icon--shield" />
+          </div>
           <div className="container hero__grid">
             <div>
               <span className="badge badge--gold">

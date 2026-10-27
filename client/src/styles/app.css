@@ -3105,9 +3105,109 @@ button.stat:hover {
    ========================================================================== */
 
 .hero {
-  background: linear-gradient(140deg, var(--navy-800) 0%, var(--navy-900) 60%, #04122b 100%);
+  background: radial-gradient(circle at top left, #1a3b8b 0%, var(--navy-900) 55%, #020b1c 100%);
   color: var(--white);
   padding-block: var(--space-12) var(--space-16);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero--animated::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(90, 160, 255, 0.18), transparent 55%),
+    radial-gradient(circle at 80% 10%, rgba(74, 141, 224, 0.14), transparent 50%);
+  pointer-events: none;
+}
+
+.hero__bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.hero__bg-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.4;
+  animation: hero-orb-float 12s ease-in-out infinite;
+}
+
+.hero__bg-orb--1 {
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(90, 160, 255, 0.5), transparent);
+  top: -80px;
+  left: -60px;
+}
+
+.hero__bg-orb--2 {
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(58, 123, 213, 0.4), transparent);
+  bottom: -120px;
+  right: 10%;
+  animation-delay: -4s;
+}
+
+.hero__bg-orb--3 {
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(74, 141, 224, 0.35), transparent);
+  top: 30%;
+  right: -80px;
+  animation-delay: -8s;
+}
+
+.hero__bg-icon {
+  position: absolute;
+  opacity: 0.08;
+  color: var(--white);
+}
+
+.hero__bg-icon--bank {
+  bottom: -40px;
+  left: -40px;
+  transform: rotate(-12deg);
+  animation: hero-icon-float 10s ease-in-out infinite;
+}
+
+.hero__bg-icon--shield {
+  top: -30px;
+  right: -20px;
+  transform: rotate(12deg);
+  animation: hero-icon-float 12s ease-in-out infinite;
+  animation-delay: -6s;
+}
+
+@keyframes hero-orb-float {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(10px, -16px) scale(1.05);
+  }
+}
+
+@keyframes hero-icon-float {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(-12deg);
+  }
+  50% {
+    transform: translate(8px, -12px) rotate(-8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__bg-orb,
+  .hero__bg-icon {
+    animation: none;
+  }
 }
 
 @media (min-width: 900px) {
@@ -3120,6 +3220,8 @@ button.stat:hover {
   display: grid;
   gap: var(--space-10);
   align-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 1000px) {
