@@ -11,6 +11,7 @@ import { LinkButton } from '../../components/ui.jsx';
 import {
   IconArrowRight,
   IconBank,
+  IconCard,
   IconChart,
   IconLock,
   IconReceipt,
@@ -66,8 +67,12 @@ export default function LandingPage() {
             <span className="hero__bg-orb hero__bg-orb--1" />
             <span className="hero__bg-orb hero__bg-orb--2" />
             <span className="hero__bg-orb hero__bg-orb--3" />
-            <IconBank size={320} className="hero__bg-icon hero__bg-icon--bank" />
-            <IconShield size={220} className="hero__bg-icon hero__bg-icon--shield" />
+            <IconBank size={340} className="hero__bg-icon hero__bg-icon--bank" />
+            <IconShield size={240} className="hero__bg-icon hero__bg-icon--shield" />
+            <IconCard size={200} className="hero__bg-icon hero__bg-icon--card" />
+            <IconTransfer size={180} className="hero__bg-icon hero__bg-icon--transfer" />
+            <IconReceipt size={160} className="hero__bg-icon hero__bg-icon--receipt" />
+            <IconLock size={150} className="hero__bg-icon hero__bg-icon--lock" />
           </div>
           <div className="container hero__grid">
             <div>

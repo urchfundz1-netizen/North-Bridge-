@@ -3183,6 +3183,38 @@ button.stat:hover {
   animation-delay: -6s;
 }
 
+.hero__bg-icon--card {
+  top: 20%;
+  left: -60px;
+  transform: rotate(18deg);
+  animation: hero-icon-float 14s ease-in-out infinite;
+  animation-delay: -2s;
+}
+
+.hero__bg-icon--transfer {
+  bottom: 10%;
+  right: 15%;
+  transform: rotate(-10deg);
+  animation: hero-icon-float 11s ease-in-out infinite;
+  animation-delay: -8s;
+}
+
+.hero__bg-icon--receipt {
+  top: 40%;
+  right: -40px;
+  transform: rotate(14deg);
+  animation: hero-icon-float 13s ease-in-out infinite;
+  animation-delay: -4s;
+}
+
+.hero__bg-icon--lock {
+  bottom: -30px;
+  right: -30px;
+  transform: rotate(-16deg);
+  animation: hero-icon-float 15s ease-in-out infinite;
+  animation-delay: -10s;
+}
+
 @keyframes hero-orb-float {
   0%,
   100% {
@@ -3196,12 +3228,19 @@ button.stat:hover {
 @keyframes hero-icon-float {
   0%,
   100% {
-    transform: translate(0, 0) rotate(-12deg);
+    transform: translate(0, 0) rotate(var(--hero-rot, -12deg));
   }
   50% {
-    transform: translate(8px, -12px) rotate(-8deg);
+    transform: translate(12px, -18px) rotate(calc(var(--hero-rot, -12deg) + 6deg));
   }
 }
+
+.hero__bg-icon--bank { --hero-rot: -12deg; }
+.hero__bg-icon--shield { --hero-rot: 12deg; }
+.hero__bg-icon--card { --hero-rot: 18deg; }
+.hero__bg-icon--transfer { --hero-rot: -10deg; }
+.hero__bg-icon--receipt { --hero-rot: 14deg; }
+.hero__bg-icon--lock { --hero-rot: -16deg; }
 
 @media (prefers-reduced-motion: reduce) {
   .hero__bg-orb,
@@ -3239,11 +3278,62 @@ button.stat:hover {
 }
 
 .hero-card {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 40px 80px -40px rgba(90, 160, 255, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-card--animated::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, rgba(90, 160, 255, 0.18), transparent 55%);
+  pointer-events: none;
+}
+
+.hero-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-activity {
+  animation: hero-activity-fade 8s ease-in-out infinite;
+  opacity: 0.9;
+}
+
+.hero-activity--1 {
+  animation-delay: 0s;
+}
+
+.hero-activity--2 {
+  animation-delay: 1.6s;
+}
+
+.hero-activity--3 {
+  animation-delay: 3.2s;
+}
+
+@keyframes hero-activity-fade {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.9;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-activity {
+    animation: none;
+  }
 }
 
 .feature-grid {
