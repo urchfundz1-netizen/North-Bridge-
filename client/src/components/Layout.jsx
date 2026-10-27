@@ -153,8 +153,8 @@ function Header({ variant = 'customer', links = [] }) {
     <header className={`site-header ${isAdmin ? 'site-header--admin' : ''}`}>
       <div className="container site-header__inner">
         <NavLink to={isAdmin ? '/admin' : '/dashboard'} className="brand">
-          <span className="brand__mark" aria-hidden="true">
-            NB
+          <span className="brand__mark brand__mark--animated" aria-hidden="true">
+            <IconBank size={18} />
           </span>
           <span className="brand__text">
             <span className="brand__name">Northbridge</span>
@@ -405,8 +405,8 @@ export function PublicHeader({ minimal = false }) {
     <header className="site-header">
       <div className="container site-header__inner">
         <NavLink to="/" className="brand">
-          <span className="brand__mark" aria-hidden="true">
-            NB
+          <span className="brand__mark brand__mark--animated" aria-hidden="true">
+            <IconBank size={18} />
           </span>
           <span className="brand__text">
             <span className="brand__name">Northbridge</span>
@@ -457,8 +457,8 @@ export function PublicFooter() {
         <div className="row wrap gap-6" style={{ justifyContent: 'space-between' }}>
           <div>
             <div className="row gap-3">
-              <span className="brand__mark" aria-hidden="true">
-                NB
+              <span className="brand__mark brand__mark--animated" aria-hidden="true">
+                <IconBank size={18} />
               </span>
               <span className="brand__name" style={{ color: 'var(--white)' }}>
                 Northbridge Bank
