@@ -112,20 +112,15 @@ const routingNumberSchema = z.preprocess(
  */
 const registrationShape = {
   fullName: z.string().trim().min(2, 'Enter your full name.').max(120),
-  dateOfBirth: dateOfBirthSchema,
+  dateOfBirth: dateOfBirthSchema.optional(),
   email: emailSchema,
-  phone: z
-    .string()
-    .trim()
-    .min(7, 'Enter a contact phone number.')
-    .max(30)
-    .regex(/^[+0-9()\-.\s]+$/, 'Enter a valid phone number.'),
-  addressLine1: z.string().trim().min(3, 'Enter your street address.').max(150),
+  phone: z.string().trim().max(30).optional(),
+  addressLine1: z.string().trim().max(150).optional(),
   addressLine2: z.string().trim().max(150).optional(),
-  city: z.string().trim().min(2, 'Enter your city.').max(80),
-  stateRegion: z.string().trim().min(2, 'Enter your state or region.').max(80),
-  postalCode: z.string().trim().min(3, 'Enter your postal code.').max(20),
-  country: z.string().trim().min(2, 'Enter your country.').max(80),
+  city: z.string().trim().max(80).optional(),
+  stateRegion: z.string().trim().max(80).optional(),
+  postalCode: z.string().trim().max(20).optional(),
+  country: z.string().trim().max(80).optional(),
   accountType: accountTypeSchema,
   password: passwordSchema,
   confirmPassword: z.string(),

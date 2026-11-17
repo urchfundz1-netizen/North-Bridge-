@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthLayout } from './AuthLayout.jsx';
 import { PublicHeader } from '../../components/Layout.jsx';
-import { Alert, Button, RadioCardGroup, SecretField, SelectField, TextField } from '../../components/ui.jsx';
+import { Alert, Button, RadioCardGroup, SecretField, TextField } from '../../components/ui.jsx';
 import { useAction } from '../../lib/hooks.js';
 import { useSession } from '../../context/SessionContext.jsx';
 import { ACCOUNT_TYPE_OPTIONS } from '../../lib/format.js';
@@ -19,15 +19,7 @@ import { IconCheck } from '../../components/icons.jsx';
 
 const INITIAL = {
   fullName: '',
-  dateOfBirth: '',
   email: '',
-  phone: '',
-  addressLine1: '',
-  addressLine2: '',
-  city: '',
-  stateRegion: '',
-  postalCode: '',
-  country: 'United States',
   accountType: 'checking',
   password: '',
   confirmPassword: '',
@@ -111,33 +103,8 @@ export default function RegisterPage() {
                 value={form.fullName}
                 onChange={update('fullName')}
                 error={fieldErrors.fullName}
-                placeholder="As it appears on your ID"
+                placeholder="Enter your name"
               />
-
-              <div className="grid-2">
-                <TextField
-                  label="Date of birth"
-                  type="date"
-                  required
-                  autoComplete="bday"
-                  value={form.dateOfBirth}
-                  onChange={update('dateOfBirth')}
-                  error={fieldErrors.dateOfBirth}
-                  hint="You must be 18 or older"
-                  max={new Date().toISOString().slice(0, 10)}
-                />
-                <TextField
-                  label="Phone"
-                  type="tel"
-                  required
-                  autoComplete="tel"
-                  inputMode="tel"
-                  value={form.phone}
-                  onChange={update('phone')}
-                  error={fieldErrors.phone}
-                  placeholder="+1 555 000 1234"
-                />
-              </div>
 
               <TextField
                 label="Email address"
@@ -149,69 +116,8 @@ export default function RegisterPage() {
                 onChange={update('email')}
                 error={fieldErrors.email}
                 placeholder="you@example.com"
-                hint="Sign-in and receipts are tied to this address"
+                hint="Used for sign-in and receipts"
               />
-            </fieldset>
-
-            <fieldset className="fieldset">
-              <legend className="fieldset__legend">Where you live</legend>
-
-              <TextField
-                label="Address line 1"
-                required
-                autoComplete="address-line1"
-                value={form.addressLine1}
-                onChange={update('addressLine1')}
-                error={fieldErrors.addressLine1}
-                placeholder="Street and number"
-              />
-              <TextField
-                label="Address line 2"
-                autoComplete="address-line2"
-                value={form.addressLine2}
-                onChange={update('addressLine2')}
-                error={fieldErrors.addressLine2}
-                placeholder="Apartment, suite (optional)"
-              />
-
-              <div className="grid-2">
-                <TextField
-                  label="City"
-                  required
-                  autoComplete="address-level2"
-                  value={form.city}
-                  onChange={update('city')}
-                  error={fieldErrors.city}
-                />
-                <TextField
-                  label="State or region"
-                  required
-                  autoComplete="address-level1"
-                  value={form.stateRegion}
-                  onChange={update('stateRegion')}
-                  error={fieldErrors.stateRegion}
-                />
-              </div>
-
-              <div className="grid-2">
-                <TextField
-                  label="Postal code"
-                  required
-                  autoComplete="postal-code"
-                  value={form.postalCode}
-                  onChange={update('postalCode')}
-                  error={fieldErrors.postalCode}
-                />
-                <SelectField
-                  label="Country"
-                  required
-                  autoComplete="country-name"
-                  value={form.country}
-                  onChange={update('country')}
-                  error={fieldErrors.country}
-                  options={COUNTRIES.map((country) => ({ value: country, label: country }))}
-                />
-              </div>
             </fieldset>
 
             <fieldset className="fieldset">
@@ -367,21 +273,3 @@ export default function RegisterPage() {
     </div>
   );
 }
-
-const COUNTRIES = [
-  'United States',
-  'Canada',
-  'United Kingdom',
-  'Ireland',
-  'Germany',
-  'France',
-  'Spain',
-  'Italy',
-  'Nigeria',
-  'Kenya',
-  'South Africa',
-  'India',
-  'Singapore',
-  'Australia',
-  'New Zealand',
-];

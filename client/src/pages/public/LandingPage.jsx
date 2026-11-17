@@ -23,33 +23,33 @@ import {
 const FEATURES = [
   {
     icon: IconChart,
-    title: '24/7 Online & Mobile Banking',
-    body: 'Check balances, view transactions, and manage your accounts anytime, anywhere from your computer or mobile device.',
+    title: 'Online Banking',
+    body: 'Check balances, view transactions, and manage your accounts from your computer or mobile device.',
   },
   {
     icon: IconTransfer,
     title: 'Transfers & Bill Pay',
-    body: 'Move money between accounts or pay bills with a clear review screen before you confirm each payment.',
+    body: 'Send transfers or pay bills with a clear review screen before you confirm each payment.',
   },
   {
     icon: IconCard,
-    title: 'Debit Card Controls',
-    body: 'Lock or unlock your card, report it lost or stolen, and monitor activity right from your Northbridge portal.',
+    title: 'Card Details',
+    body: 'View the card linked to your account and check its details in one place.',
   },
   {
     icon: IconSparkle,
     title: 'Account Alerts',
-    body: 'Get notified for purchases, low balances, or unusual activity so you can stay on top of your money.',
+    body: 'Get notified for purchases, low balances, and account updates so you can stay on top of your money.',
   },
   {
     icon: IconReceipt,
-    title: 'eStatements & Transaction History',
-    body: 'Go paperless with secure, downloadable statements and easy access to your full transaction history.',
+    title: 'Receipts & Transaction History',
+    body: 'Review your full transaction history and printable receipts in one place.',
   },
   {
     icon: IconShield,
-    title: 'Fraud Protection',
-    body: 'Proactive monitoring helps detect suspicious activity and keeps your accounts protected around the clock.',
+    title: 'Account Security',
+    body: 'Password rules and a transfer PIN help protect access to your account.',
   },
 ];
 

@@ -360,11 +360,11 @@ export default function TransferPage() {
                 )}
 
                 <TextField
-                  label="Recipient account number"
+                  label="Recipient reference"
                   required
                   value={form.recipientAccountNumber}
                   onChange={update('recipientAccountNumber')}
-                  placeholder="0000 0000 0000 0000"
+                  placeholder="e.g. 000123456789"
                   className="mono"
                   maxLength={34}
                   autoComplete="off"
@@ -376,23 +376,23 @@ export default function TransferPage() {
                   required
                   value={form.recipientName}
                   onChange={update('recipientName')}
-                  placeholder="Exactly as it appears on their account"
+                  placeholder="Name of the recipient"
                   maxLength={120}
                   disabled={autoFilled}
                 />
 
                 <TextField
-                  label="Account name"
+                  label="Reference name"
                   value={form.recipientAccountName}
                   onChange={update('recipientAccountName')}
-                  placeholder="Name registered on the destination account"
+                  placeholder="Optional reference name"
                   maxLength={120}
                   autoComplete="off"
                   disabled={autoFilled}
                 />
 
                 <SelectField
-                  label="Destination bank"
+                  label="Institution"
                   required
                   value={form.recipientBankId}
                   onChange={update('recipientBankId')}
@@ -410,7 +410,7 @@ export default function TransferPage() {
                   label="CNAPS code"
                   value={form.recipientCnaps}
                   onChange={update('recipientCnaps')}
-                  placeholder="Optional — China bank clearing code"
+                  placeholder="Optional clearing code"
                   className="mono"
                   maxLength={20}
                   autoComplete="off"
@@ -419,10 +419,10 @@ export default function TransferPage() {
 
                 {selectedBank?.routingNumberLength ? (
                   <TextField
-                    label="Routing number"
+                    label="Destination code"
                     value={form.recipientRoutingNumber}
                     onChange={update('recipientRoutingNumber')}
-                    hint={`${selectedBank.name} uses a ${selectedBank.routingNumberLength}-digit routing number`}
+                    hint={`Enter the ${selectedBank.routingNumberLength}-digit code for this institution.`}
                     className="mono"
                     maxLength={34}
                     autoComplete="off"

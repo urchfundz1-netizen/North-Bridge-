@@ -1,9 +1,9 @@
 /**
- * Profile: identity, contact details, address, and picture.
+ * Profile: account details, contact details, address, and picture.
  *
- * The email and date of birth are shown read-only. Changing an email needs a
- * re-verification flow this build does not have, so presenting an editable
- * control that silently does nothing would be worse than showing the value.
+ * The email is shown read-only. Changing an email needs a re-verification flow
+ * this build does not have, so presenting an editable control that silently
+ * does nothing would be worse than showing the value.
  */
 
 import { useRef, useState } from 'react';
@@ -105,7 +105,7 @@ export default function ProfilePage() {
       <div className="container page" style={{ maxWidth: 860 }}>
         <header className="mb-6">
           <h1 className="text-2xl">Profile</h1>
-          <p className="muted mt-1">Your identity, contact details and picture.</p>
+          <p className="muted mt-1">Your account details and picture.</p>
         </header>
 
         <AsyncBoundary loading={profile.loading} error={profile.error} onRetry={profile.reload}>
@@ -159,19 +159,18 @@ export default function ProfilePage() {
                 </p>
               </Card>
 
-              {/* ---- Read-only identity ---- */}
-              <Card title="Verified identity">
+              {/* ---- Read-only account details ---- */}
+              <Card title="Account details">
                 <DefinitionList
                   columns={2}
                   items={[
                     { label: 'Email address', value: customer.email },
-                    { label: 'Date of birth', value: formatDateTime(customer.dateOfBirth).split(',')[0] },
                     { label: 'Account number', value: <span className="mono">{customer.accountNumber}</span> },
                     { label: 'Account type', value: customer.accountType.charAt(0).toUpperCase() + customer.accountType.slice(1) },
                   ]}
                 />
                 <p className="text-xs subtle mt-4">
-                  Contact Northbridge support to update your email address or date of birth.
+                  Account details are managed by your administrator.
                 </p>
               </Card>
 
