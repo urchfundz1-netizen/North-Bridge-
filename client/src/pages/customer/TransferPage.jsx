@@ -1,16 +1,14 @@
 /**
  * Transfer flow.
  *
- * Four steps, each of which must be completed before the next:
+ * Three steps, each of which must be completed before the next:
  *
  *   1. Recipient  - type, destination bank, and the account details.
  *   2. Amount     - server-priced quote, so the fee shown is the fee charged.
- *   3. Confirm    - review the details and enter the transfer PIN.
- *   4. Code       - request the one-time code, enter it, and submit.
+ *   3. Confirm    - review the details, enter the transfer PIN and submit.
  *
  * The PIN has its own step so it is never sitting in the DOM while the user is
- * still editing the amount, and the code has its own page so it is requested
- * only once the customer has committed their PIN.
+ * still editing the amount.
  *
  * `idempotencyKey` is generated once per attempt and reused across retries. If
  * the response is lost in transit and the user taps submit again, the server
@@ -39,8 +37,7 @@ import { FrozenTransferNotice } from '../../components/FrozenTransferNotice.jsx'
 import { formatCents, TRANSFER_TYPE_OPTIONS } from '../../lib/format.js';
 import { useSession } from '../../context/SessionContext.jsx';
 
-const STEPS = ['Recipient', 'Amount', 'Confirm', 'One-time code'];
-const OTP_LENGTH = 8;
+const STEPS = ['Recipient', 'Amount', 'Confirm'];
 
 const INITIAL_FORM = {
   transferType: 'local',
@@ -65,8 +62,6 @@ export default function TransferPage() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [pin, setPin] = useState('');
   const [quote, setQuote] = useState(null);
-  const [otp, setOtp] = useState(null);
-  const [otpCode, setOtpCode] = useState('');
   const [created, setCreated] = useState(null);
   const [autoFilled, setAutoFilled] = useState(false);
   const [autoFillBankName, setAutoFillBankName] = useState(null);
@@ -84,21 +79,6 @@ export default function TransferPage() {
 
   const [fetchQuote, quoting, quoteError] = useAction(customerApi.quoteTransfer);
   const [submitTransfer, submitting, submitError] = useAction(customerApi.createTransfer);
-  const [requestOtp, requestingOtp, otpError] = useAction(customerApi.requestTransferOtp);
-
-  /**
-   * Ask the server for a fresh code. The response deliberately does not contain
-   * the code itself; a member of staff reads it from the admin console and
-   * relays it, exactly like the sign-in code.
-   */
-  const beginOtp = async () => {
-    setOtp(null);
-    setOtpCode('');
-    const result = await requestOtp();
-    if (result?.challengeId) {
-      setOtp({ challengeId: result.challengeId, expiresAt: result.expiresAt });
-    }
-  };
 
   // A fresh idempotency key per attempt, reused if a retry is needed.
   useEffect(() => {
@@ -248,25 +228,12 @@ export default function TransferPage() {
     setStep(3);
   };
 
-  /**
-   * The PIN is committed before the code is requested, so a mistyped PIN never
-   * consumes a one-time code. The code page then handles the final submission.
-   */
-  const goToOtp = (event) => {
-    event.preventDefault();
-    if (pin.length !== 4) return;
-    setStep(4);
-    beginOtp();
-  };
-
   const confirm = async (event) => {
     event.preventDefault();
-    if (!otp?.challengeId || pin.length !== 4 || otpCode.length !== OTP_LENGTH) return;
+    if (pin.length !== 4) return;
     const result = await submitTransfer({
       ...quotePayload(form),
       transferPin: pin,
-      otpChallengeId: otp.challengeId,
-      otpCode,
       idempotencyKey: idempotencyKeyRef.current,
     });
     if (!result?.transfer) return;
@@ -599,8 +566,14 @@ export default function TransferPage() {
 
           {/* ---------- Step 3: review + PIN ---------- */}
           {step === 3 ? (
-            <form onSubmit={goToOtp} noValidate>
+            <form onSubmit={confirm} noValidate>
               <div className="card__body">
+                {submitError ? (
+                  <Alert tone="danger" title="Transfer not submitted">
+                    {submitError.message}
+                  </Alert>
+                ) : null}
+
                 <h2 className="text-md mb-3">Check the details</h2>
 
                 <div className="card" style={{ background: 'var(--surface-muted)' }}>
@@ -667,83 +640,10 @@ export default function TransferPage() {
                   </Button>
                   <Button
                     type="submit"
-                    variant="primary"
-                    icon={IconArrowRight}
-                    disabled={pin.length !== 4}
-                  >
-                    Continue
-                  </Button>
-                </div>
-              </div>
-            </form>
-          ) : null}
-
-          {/* ---------- Step 4: one-time code ---------- */}
-          {step === 4 ? (
-            <form onSubmit={confirm} noValidate>
-              <div className="card__body">
-                {submitError ? (
-                  <Alert tone="danger" title="Transfer not submitted">
-                    {submitError.message}
-                  </Alert>
-                ) : null}
-
-                <h2 className="text-md mb-2">Enter the 8 digits number on your token</h2>
-
-                {otpError ? (
-                  <Alert tone="danger" className="mb-3" title="Could not request a code">
-                    {otpError.message}
-                  </Alert>
-                ) : otp ? null : requestingOtp ? (
-                  <Alert tone="info" className="mb-3" title="Requesting a code">
-                    Creating a one-time code for this transfer…
-                  </Alert>
-                ) : (
-                  <Alert tone="warning" className="mb-3" title="One-time code needed">
-                    Request a code before this transfer can be submitted.
-                  </Alert>
-                )}
-
-                <TextField
-                  aria-label="8-digit token code"
-                  required
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={OTP_LENGTH}
-                  value={otpCode}
-                  onChange={(event) =>
-                    setOtpCode(event.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH))
-                  }
-                  inputClassName="mono"
-                  style={{ letterSpacing: '0.3em' }}
-                  placeholder="00000000"
-                  autoFocus
-                />
-
-                <div className="row gap-2 mt-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={beginOtp}
-                    loading={requestingOtp}
-                    disabled={submitting}
-                  >
-                    {otp ? 'Request a new code' : 'Request a code'}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="card__footer">
-                <div className="row gap-2">
-                  <Button variant="ghost" icon={IconArrowLeft} onClick={() => setStep(3)} disabled={submitting}>
-                    Back
-                  </Button>
-                  <Button
-                    type="submit"
                     variant="accent"
                     icon={IconLock}
                     loading={submitting}
-                    disabled={otpCode.length !== OTP_LENGTH || !otp?.challengeId || requestingOtp}
+                    disabled={pin.length !== 4}
                   >
                     Confirm transfer
                   </Button>

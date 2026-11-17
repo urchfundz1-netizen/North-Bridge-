@@ -1,28 +1,21 @@
 /**
  * Customer sign-in.
  *
- * Sign-in is deliberately two steps. The password is checked first; if it holds,
- * the server reserves a 6-digit code for the attempt and issues a challenge
- * instead of a session. Only the code step creates the session cookie, so a
- * leaked password on its own cannot sign anyone in.
- *
- * The cookie is issued by the server; nothing is persisted client-side. A wrong
- * password is answered with the same generic message whether or not the address
- * exists, and the server applies its own throttle, so this form does not try to
- * second-guess when a lockout has been applied.
+ * The server checks the password and issues an httpOnly session cookie on
+ * success; nothing is persisted client-side. A wrong password is answered with
+ * the same generic message whether or not the address exists, and the server
+ * applies its own throttle, so this form does not try to second-guess when a
+ * lockout has been applied.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthLayout } from './AuthLayout.jsx';
 import { PublicHeader } from '../../components/Layout.jsx';
 import { Alert, Button, SecretField, TextField } from '../../components/ui.jsx';
 import { useSession } from '../../context/SessionContext.jsx';
 import { useAction } from '../../lib/hooks.js';
-import { IconArrowLeft, IconLock, IconMail, IconShield } from '../../components/icons.jsx';
-
-const OTP_LENGTH = 6;
-const CODE_TTL_SECONDS = 5 * 60;
+import { IconLock, IconMail, IconShield } from '../../components/icons.jsx';
 
 export default function LoginPage() {
   const session = useSession();
@@ -30,34 +23,19 @@ export default function LoginPage() {
   const location = useLocation();
 
   const [form, setForm] = useState({ email: '', password: '' });
-  const [challenge, setChallenge] = useState(null);
-  const [code, setCode] = useState('');
-  const [secondsLeft, setSecondsLeft] = useState(CODE_TTL_SECONDS);
-
-  const [runLogin, loginPending, loginError, resetLoginError] = useAction(session.login);
-  const [runVerify, verifyPending, verifyError, resetVerifyError] = useAction(
-    session.verifyLoginOtp,
-  );
-
-  // The countdown restarts whenever a challenge is issued, including a resend.
-  useEffect(() => {
-    if (!challenge) return undefined;
-    setSecondsLeft(CODE_TTL_SECONDS);
-    const timer = window.setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [challenge]);
+  const [runLogin, loginPending, loginError] = useAction(session.login);
 
   const redirectTo = location.state?.from ?? '/dashboard';
 
-  const finish = (result) => {
+  const update = (field) => (event) => {
+    setForm((prev) => ({ ...prev, [field]: event.target.value }));
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const result = await runLogin(form);
+    if (!result) return;
+
     // A frozen account still signs in, but must not be sent to a screen that
     // offers transfers it cannot perform.
     const restrictions = result?.restrictions ?? [];
@@ -66,191 +44,68 @@ export default function LoginPage() {
     });
   };
 
-  const update = (field) => (event) => {
-    resetLoginError();
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
-  };
-
-  const submitCredentials = async (event) => {
-    event.preventDefault();
-    const result = await runLogin(form);
-    if (!result) return;
-
-    // The password checked out but no session exists yet: move on to the code.
-    if (result.otpRequired) {
-      setChallenge({ challengeId: result.challengeId, email: result.email });
-      setCode('');
-      return;
-    }
-
-    finish(result);
-  };
-
-  const submitCode = async (event) => {
-    event.preventDefault();
-    if (code.length !== OTP_LENGTH || codeExpired) return;
-    const result = await runVerify(challenge.challengeId, code);
-    if (!result) return;
-    finish(result);
-  };
-
-  // Re-running the password step reserves a fresh code for the same account
-  // and returns a new challenge id, which restarts the countdown.
-  const resendCode = async () => {
-    resetVerifyError();
-    resetLoginError();
-    const result = await runLogin(form);
-    if (!result) return;
-    if (result.otpRequired) {
-      setChallenge({ challengeId: result.challengeId, email: result.email });
-      setCode('');
-      return;
-    }
-    finish(result);
-  };
-
-  const useAnotherAccount = () => {
-    resetVerifyError();
-    setChallenge(null);
-    setCode('');
-  };
-
-  const fieldErrors = loginError?.fieldErrors ?? {};
-  const codeError = verifyError?.fieldErrors?.code;
-  const onCodeStep = Boolean(challenge);
-  const codeExpired = secondsLeft <= 0;
-  const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
-
   return (
     <div className="app-shell">
       <PublicHeader minimal />
       <main id="main" className="app-main">
         <AuthLayout
-          title={onCodeStep ? 'Enter your sign-in code' : 'Welcome back'}
-          subtitle={
-            onCodeStep
-              ? `We sent a 6-digit code to ${challenge.email}. Enter it to finish signing in.`
-              : 'Sign in to your Northbridge account.'
-          }
+          title="Welcome back"
+          subtitle="Sign in to your Northbridge account."
           variant="dark"
         >
-          {!onCodeStep && location.state?.expired ? (
+          {location.state?.expired ? (
             <Alert tone="info" title="Your session expired">
               For your security you were signed out. Please sign in again.
             </Alert>
           ) : null}
 
-          {onCodeStep ? (
-            <>
-              {verifyError ? <Alert tone="danger">{verifyError.message}</Alert> : null}
-              {loginError ? <Alert tone="danger">{loginError.message}</Alert> : null}
+          {loginError ? (
+            <Alert tone="danger" title="We could not sign you in">
+              {loginError.message}
+            </Alert>
+          ) : null}
 
-              <form onSubmit={submitCode} noValidate>
-                <TextField
-                  label="6-digit code"
-                  name="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]*"
-                  maxLength={OTP_LENGTH}
-                  required
-                  value={code}
-                  onChange={(event) => {
-                    resetVerifyError();
-                    setCode(event.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH));
-                  }}
-                  error={codeError}
-                  hint={codeExpired ? undefined : `Expires in ${countdown}`}
-                  placeholder="000000"
-                  icon={IconShield}
-                  disabled={codeExpired}
-                  autoFocus
-                />
+          <form onSubmit={submit} noValidate>
+            <TextField
+              label="Email address"
+              type="email"
+              name="email"
+              autoComplete="username"
+              inputMode="email"
+              required
+              value={form.email}
+              onChange={update('email')}
+              error={loginError?.fieldErrors?.email}
+              placeholder="you@example.com"
+              icon={IconMail}
+              autoFocus
+            />
 
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  loading={verifyPending}
-                  disabled={code.length !== OTP_LENGTH || codeExpired}
-                  className="btn--block"
-                  icon={IconLock}
-                >
-                  Verify and sign in
-                </Button>
-              </form>
+            <SecretField
+              label="Password"
+              name="password"
+              autoComplete="current-password"
+              required
+              value={form.password}
+              onChange={update('password')}
+              error={loginError?.fieldErrors?.password}
+              placeholder="Your password"
+              maxLength={13}
+              icon={IconLock}
+              inline
+            />
 
-              {codeExpired ? (
-                <p className="text-sm muted mt-4 text-center">
-                  Your code has expired.{' '}
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={resendCode}
-                    disabled={loginPending}
-                  >
-                    {loginPending ? 'Resending…' : 'Resend code'}
-                  </button>
-                </p>
-              ) : null}
-
-              <p className="text-sm muted mt-6 text-center">
-                <button type="button" className="link-button" onClick={useAnotherAccount}>
-                  <IconArrowLeft size={16} aria-hidden="true" /> Use a different account
-                </button>
-              </p>
-            </>
-          ) : (
-            <>
-              {loginError ? (
-                <Alert tone="danger" title="We could not sign you in">
-                  {loginError.message}
-                </Alert>
-              ) : null}
-
-              <form onSubmit={submitCredentials} noValidate>
-                <TextField
-                  label="Email address"
-                  type="email"
-                  name="email"
-                  autoComplete="username"
-                  inputMode="email"
-                  required
-                  value={form.email}
-                  onChange={update('email')}
-                  error={fieldErrors.email}
-                  placeholder="you@example.com"
-                  icon={IconMail}
-                  autoFocus
-                />
-
-                <SecretField
-                  label="Password"
-                  name="password"
-                  autoComplete="current-password"
-                  required
-                  value={form.password}
-                  onChange={update('password')}
-                  error={fieldErrors.password}
-                  placeholder="Your password"
-                  maxLength={13}
-                  icon={IconLock}
-                  inline
-                />
-
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  loading={loginPending}
-                  className="btn--block"
-                  icon={IconShield}
-                >
-                  Continue
-                </Button>
-              </form>
-            </>
-          )}
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={loginPending}
+              className="btn--block"
+              icon={IconShield}
+            >
+              Sign in
+            </Button>
+          </form>
         </AuthLayout>
       </main>
     </div>

@@ -74,7 +74,7 @@ export function SessionProvider({ actor = 'customer', children }) {
     bootstrap();
   }, [bootstrap]);
 
-  /** Adopt a session the server has just issued (login, OTP step, register). */
+  /** Adopt a session the server has just issued (login, register). */
   const adopt = useCallback((data) => {
     setCsrfToken(data?.csrfToken ?? null);
     setState({
@@ -88,24 +88,10 @@ export function SessionProvider({ actor = 'customer', children }) {
   const login = useCallback(
     async (credentials) => {
       const data = await api.login(credentials.email, credentials.password);
-      // A one-time code is still required: the server has deliberately not
-      // issued a session yet, so we adopt nothing and let the caller finish
-      // the challenge with `verifyLoginOtp`.
-      if (data?.otpRequired) return data;
       adopt(data);
       return data;
     },
     [api, adopt],
-  );
-
-  /** Complete the one-time-code step and adopt the session it issues. */
-  const verifyLoginOtp = useCallback(
-    async (challengeId, code) => {
-      const data = await customerApi.verifyLoginOtp(challengeId, code);
-      adopt(data);
-      return data;
-    },
-    [adopt],
   );
 
   /**
@@ -147,8 +133,8 @@ export function SessionProvider({ actor = 'customer', children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ ...state, actor, status, login, register, logout, refresh: bootstrap, patchIdentity, verifyLoginOtp }),
-    [state, actor, status, login, register, logout, bootstrap, patchIdentity, verifyLoginOtp],
+    () => ({ ...state, actor, status, login, register, logout, refresh: bootstrap, patchIdentity }),
+    [state, actor, status, login, register, logout, bootstrap, patchIdentity],
   );
 
   // This provider is mounted as a layout route, so nested routes arrive through

@@ -41,7 +41,6 @@ const ProfilePage = lazy(() => import('./pages/customer/ProfilePage.jsx'));
 const SecurityPage = lazy(() => import('./pages/customer/SecurityPage.jsx'));
 const LinkCardPage = lazy(() => import('./pages/customer/LinkCardPage.jsx'));
 const PayBillsPage = lazy(() => import('./pages/customer/PayBillsPage.jsx'));
-const CryptoPage = lazy(() => import('./pages/customer/CryptoPage.jsx'));
 
 /* ---- Admin ---- */
 const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage.jsx'));
@@ -52,7 +51,6 @@ const AdminCustomerDetailPage = lazy(() => import('./pages/admin/AdminCustomerDe
 const AdminTransfersPage = lazy(() => import('./pages/admin/AdminTransfersPage.jsx'));
 const AdminTransferDetailPage = lazy(() => import('./pages/admin/AdminTransferDetailPage.jsx'));
 const AdminBanksPage = lazy(() => import('./pages/admin/AdminBanksPage.jsx'));
-const AdminOtpPage = lazy(() => import('./pages/admin/AdminOtpPage.jsx'));
 const AdminAuditPage = lazy(() => import('./pages/admin/AdminAuditPage.jsx'));
 const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage.jsx'));
 
@@ -104,7 +102,6 @@ export default function App() {
             <Route path="/security" element={customerOnly(<SecurityPage />)} />
             <Route path="/link-card" element={customerOnly(<LinkCardPage />)} />
             <Route path="/pay-bills" element={customerOnly(<PayBillsPage />)} />
-            <Route path="/crypto" element={customerOnly(<CryptoPage />)} />
           </Route>
 
           {/* ================= Admin portal ================= */}
@@ -117,7 +114,6 @@ export default function App() {
             <Route path="transfers" element={adminOnly(<AdminTransfersPage />)} />
             <Route path="transfers/:id" element={adminOnly(<AdminTransferDetailPage />)} />
             <Route path="banks" element={adminOnly(<AdminBanksPage />)} />
-            <Route path="otp" element={adminOnly(<AdminOtpPage />)} />
             <Route path="audit" element={adminOnly(<AdminAuditPage />)} />
             <Route path="settings" element={adminOnly(<AdminSettingsPage />)} />
 

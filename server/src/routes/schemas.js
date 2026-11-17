@@ -171,15 +171,6 @@ export const customerLoginSchema = z.object({
   password: z.string().min(1, 'Enter your password.').max(200),
 });
 
-/**
- * The second sign-in step. `challengeId` is the opaque handle returned by a
- * successful password check; `code` is the 6-digit OTP reserved for it.
- */
-export const otpVerifySchema = z.object({
-  challengeId: z.string().trim().min(8, 'This sign-in has expired. Please start again.').max(120),
-  code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code.'),
-});
-
 export const adminLoginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Enter your password.').max(200),
@@ -270,22 +261,13 @@ export const transferSchema = z.object({
   amount: amountSchema,
   description: z.string().trim().max(240).optional(),
   transferPin: transferPinSchema,
-  /** The one-time code requested from the admin console for this transfer. */
-  otpChallengeId: z
-    .string()
-    .trim()
-    .min(8, 'Request a one-time code before submitting this transfer.')
-    .max(120),
-  otpCode: z.string().trim().regex(/^\d{8}$/, 'Enter the 8-digit one-time code.'),
   /** Client-generated token; a retried submit returns the original transfer. */
   idempotencyKey: z.string().trim().max(64).optional(),
 });
 
-/** Same as a transfer, without the PIN or code - used to quote a fee. */
+/** Same as a transfer, without the PIN - used to quote a fee. */
 export const transferQuoteSchema = transferSchema.omit({
   transferPin: true,
-  otpChallengeId: true,
-  otpCode: true,
 });
 
 /* -------------------------------------------------------------------------- */

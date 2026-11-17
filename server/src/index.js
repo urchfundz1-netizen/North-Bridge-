@@ -11,7 +11,6 @@ import { config } from './core/config.js';
 import { bootstrap } from './db/migrate.js';
 import { purgeExpiredSessions, pruneRateLimits } from './core/session.js';
 import { clearSettingsCache, loadSettings } from './services/settings.js';
-import { purgeExpiredChallenges } from './services/otp-service.js';
 import { initFirestore } from './db/firestore.js';
 
 async function bootstrapIndex() {
@@ -29,7 +28,7 @@ async function bootstrapIndex() {
   const housekeeping = setInterval(() => {
     // The purges are async; settle them explicitly so a rejection is logged
     // here instead of escaping as an unhandled rejection the try/catch missed.
-    Promise.allSettled([purgeExpiredSessions(), purgeExpiredChallenges()]).then((results) => {
+    Promise.allSettled([purgeExpiredSessions()]).then((results) => {
       for (const result of results) {
         if (result.status === 'rejected') {
           console.error('[housekeeping]', result.reason?.message ?? result.reason);

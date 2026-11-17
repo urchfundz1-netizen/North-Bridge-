@@ -14,7 +14,6 @@ import { attachAuth, requireCustomer, requireCsrf } from '../middleware/auth.js'
 import { asyncHandler } from '../middleware/error-handler.js';
 import {
   customerLoginSchema,
-  otpVerifySchema,
   registerSchema,
   changePasswordSchema,
   changePinSchema,
@@ -23,12 +22,9 @@ import { toCustomerSelf } from './serializers.js';
 import {
   registerCustomer,
   authenticateCustomer,
-  finalizeCustomerLogin,
-  findCustomerById,
   changePassword,
   changeTransferPin,
 } from '../services/customer-service.js';
-import { createLoginChallenge, verifyLoginChallenge } from '../services/otp-service.js';
 import {
   createSession,
   setSessionCookie,
@@ -39,7 +35,6 @@ import {
 import { bankingRules } from '../services/settings.js';
 import { recordAudit, AUDIT_ACTIONS } from '../services/audit.js';
 import { unauthorized } from '../core/errors.js';
-import { nowIso } from '../db/firestore.js';
 
 const router = Router();
 
@@ -54,25 +49,6 @@ const LOGIN_MESSAGES = {
     'Too many failed sign-in attempts. Please wait 15 minutes before trying again.',
   disabled: 'This account has been disabled. Please contact Northbridge support.',
 };
-
-/** Outcomes of the second (one-time code) step. */
-const OTP_MESSAGES = {
-  invalid: 'That sign-in has expired. Please enter your details again.',
-  expired: 'That code has expired. Please sign in again to get a new one.',
-  mismatch: 'Incorrect Pin',
-  too_many_attempts: 'Too many incorrect codes. Please sign in again.',
-};
-
-const OTP_LIMIT = 10;
-const OTP_WINDOW_MS = 15 * 60_000;
-
-/** `ada.lovelace@example.com` -> `a***********@example.com`. */
-function maskEmail(email) {
-  const [local = '', domain = ''] = String(email ?? '').split('@');
-  if (!domain) return 'your email';
-  const lead = local.slice(0, 1);
-  return `${lead}${'*'.repeat(Math.max(local.length - 1, 1))}@${domain}`;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Registration                                                               */
@@ -112,9 +88,7 @@ router.post(
   }),
   validateBody(customerLoginSchema),
   asyncHandler(async (req, res) => {
-    const result = await authenticateCustomer(req.body.email, req.body.password, {
-      recordLogin: false,
-    });
+    const result = await authenticateCustomer(req.body.email, req.body.password);
 
     if (!result.ok) {
       recordThrottleFailure(req, { limit: LOGIN_LIMIT, windowMs: LOGIN_WINDOW_MS, blockMs: 30 * 60_000 });
@@ -131,75 +105,7 @@ router.post(
 
     clearThrottle(req);
 
-    // The password checked out, but no session is issued yet: the customer must
-    // first complete the one-time-code step. One code from the fixed pool is
-    // reserved for this challenge and only that code will complete it.
-    const challenge = await createLoginChallenge(result.customer);
-
-    await recordAudit({
-      actorType: 'customer',
-      actorId: result.customer.id,
-      actorEmail: result.customer.email,
-      action: AUDIT_ACTIONS.CUSTOMER_LOGIN_CHALLENGED,
-      targetType: 'customer',
-      targetId: result.customer.id,
-      targetLabel: result.customer.account_number,
-      metadata: { stage: 'otp_requested' },
-      request: req,
-    });
-
-    res.json({
-      otpRequired: true,
-      challengeId: challenge.challengeId,
-      expiresAt: challenge.expiresAt,
-      email: maskEmail(result.customer.email),
-    });
-  }),
-);
-
-/**
- * Complete sign-in with the 6-digit code reserved for the challenge. Only here
- * is a session created, so a correct password on its own never yields a cookie.
- */
-router.post(
-  '/login/verify-otp',
-  throttle({
-    limit: OTP_LIMIT,
-    windowMs: OTP_WINDOW_MS,
-    blockMs: 30 * 60_000,
-    keyPrefix: 'customer-otp',
-    subjectField: 'challengeId',
-  }),
-  validateBody(otpVerifySchema),
-  asyncHandler(async (req, res) => {
-    const result = await verifyLoginChallenge(req.body.challengeId, req.body.code);
-
-    if (!result.ok) {
-      recordThrottleFailure(req, { limit: OTP_LIMIT, windowMs: OTP_WINDOW_MS, blockMs: 30 * 60_000 });
-      await recordAudit({
-        actorType: 'customer',
-        action: AUDIT_ACTIONS.CUSTOMER_LOGIN_FAILED,
-        targetType: 'customer',
-        metadata: { reason: result.reason, stage: 'otp' },
-        request: req,
-      });
-      throw unauthorized(OTP_MESSAGES[result.reason] ?? OTP_MESSAGES.invalid);
-    }
-
-    clearThrottle(req);
-
-    // Re-read the account: its standing may have changed while the code was
-    // being checked, and every request must trust only the database.
-    const customer = await findCustomerById(result.customerId);
-    if (!customer) throw unauthorized(OTP_MESSAGES.invalid);
-
-    if (customer.locked_until && customer.locked_until > nowIso()) {
-      throw unauthorized(LOGIN_MESSAGES.temporarily_locked);
-    }
-    if (customer.status === 'locked') throw unauthorized(LOGIN_MESSAGES.locked);
-    if (customer.status === 'disabled') throw unauthorized(LOGIN_MESSAGES.disabled);
-
-    await finalizeCustomerLogin(customer.id);
+    const customer = result.customer;
 
     // Rotate the session on sign-in so a fixated cookie cannot survive it.
     const previous = req.cookies?.[cookieNameFor('customer')];
@@ -216,7 +122,7 @@ router.post(
       targetType: 'customer',
       targetId: customer.id,
       targetLabel: customer.account_number,
-      metadata: { stage: 'otp_verified' },
+      metadata: { stage: 'password' },
       request: req,
     });
 

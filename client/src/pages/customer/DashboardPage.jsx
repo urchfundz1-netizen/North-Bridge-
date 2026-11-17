@@ -23,7 +23,6 @@ import { LedgerRow } from '../../components/Transactions.jsx';
 import {
   IconArrowRight,
   IconBill,
-  IconBitcoin,
   IconCard,
   IconCheckCircle,
   IconHistory,
@@ -136,17 +135,17 @@ export default function DashboardPage() {
                     </span>
                     <span>Pay bills</span>
                   </Link>
-                  <Link className="tile" to="/crypto">
-                    <span className="tile__icon">
-                      <IconBitcoin size={20} />
-                    </span>
-                    <span>Crypto</span>
-                  </Link>
                   <Link className="tile" to="/link-card">
                     <span className="tile__icon">
                       <IconCard size={20} />
                     </span>
                     <span>Link Card</span>
+                  </Link>
+                  <Link className="tile" to="/transactions">
+                    <span className="tile__icon">
+                      <IconHistory size={20} />
+                    </span>
+                    <span>Statements</span>
                   </Link>
                 </div>
               </div>

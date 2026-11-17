@@ -16,24 +16,12 @@ export function FrozenTransferNotice({ open, onClose, accountNumber }) {
       }
     >
       <div className="stack gap-4">
-        <p>Dear Valued Customer,</p>
         <p>
-          Your Northbridge Bank account ending in <strong>{lastFour}</strong> has been
-          temporarily frozen due to unrecognized activity detected on your account.
+          Transfers are currently unavailable for the account ending in <strong>{lastFour}</strong>.
         </p>
         <p>
-          To resolve this issue, please visit your nearest official Northbridge Bank branch in
-          person with a valid government-issued ID for identity verification and further
-          assistance.
-        </p>
-        <p>
-          Your security is our priority. We apologize for any inconvenience and appreciate your
-          cooperation.
-        </p>
-        <p>
-          <strong>Northbridge Bank</strong>
-          <br />
-          Customer Support Team
+          Review the account status or contact your administrator if you believe this is a
+          mistake.
         </p>
       </div>
     </Modal>

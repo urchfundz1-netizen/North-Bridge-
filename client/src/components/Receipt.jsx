@@ -128,11 +128,6 @@ export function Receipt({ receipt, actions = true, className = '' }) {
                 Keep this receipt for your records. Funds settled once only; this document is the
                 authoritative record of the transaction.
               </span>
-              <span>
-                Questions? Contact {payload.bank?.name ?? 'Northbridge Bank'} on{' '}
-                {payload.bank?.supportPhone ?? '+1 (800) 555-0142'} or{' '}
-                {payload.bank?.supportEmail ?? 'support@northbridge.bank'}.
-              </span>
             </>
           ) : null}
         </div>

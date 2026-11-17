@@ -32,7 +32,6 @@ import {
   IconLogOut,
   IconMenu,
   IconSettings,
-  IconShield,
   IconTransfer,
   IconUser,
   IconUsers,
@@ -60,8 +59,6 @@ const ADMIN_PRIMARY = [
   // the desktop header; the overview tiles deep-link into it as well.
   { to: '/admin/transfers', label: 'Transfers', icon: IconTransfer, hideOnBottomNav: true },
   { to: '/admin/banks', label: 'Banks', icon: IconBank },
-  // The one-time codes a customer needs to sign in or authorise a transfer.
-  { to: '/admin/otp', label: 'One-time codes', icon: IconShield },
   { to: '/admin/audit', label: 'Audit', icon: IconHistory },
   { to: '/admin/settings', label: 'Settings', icon: IconSettings },
 ];
@@ -504,7 +501,7 @@ export function PublicFooter() {
 
         <hr className="divider mt-6" style={{ background: 'rgba(255,255,255,0.14)' }} />
         <p className="text-xs mt-4" style={{ color: 'rgba(255,255,255,0.55)' }}>
-          &copy; {new Date().getFullYear()} Northbridge Bank. Member FDIC.
+          &copy; {new Date().getFullYear()} Northbridge Bank.
         </p>
       </div>
     </footer>

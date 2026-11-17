@@ -136,10 +136,8 @@ const DUMMY_HASH =
  * Verify login credentials. Returns a discriminated result rather than throwing,
  * so the caller decides how much to reveal.
  *
- * When the portal requires a second factor, the caller passes
- * `recordLogin: false`: the password is proven (and its hash upgraded if stale)
- * but `last_login_at` is left untouched until the challenge is completed, so an
- * abandoned second step never looks like a completed sign-in.
+ * A caller can pass `recordLogin: false` to leave `last_login_at` untouched,
+ * for example when the password is checked as part of a longer flow.
  */
 export async function authenticateCustomer(email, password, { recordLogin = true } = {}) {
   const customer = await findCustomerByEmail(email);
@@ -178,7 +176,7 @@ export async function authenticateCustomer(email, password, { recordLogin = true
   return { ok: true, customer: { ...customer, failed_login_attempts: 0 } };
 }
 
-/** Mark a fully completed sign-in (password *and* any second factor). */
+/** Mark a completed sign-in. */
 export async function finalizeCustomerLogin(customerId) {
   await setById(
     C.customers,

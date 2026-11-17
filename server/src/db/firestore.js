@@ -92,7 +92,6 @@ export const C = {
   audit: 'audit_logs',
   counters: 'counters',
   refs: 'unique_refs',
-  loginChallenges: 'login_challenges',
 };
 
 export { FieldValue, AggregateField, FieldPath };

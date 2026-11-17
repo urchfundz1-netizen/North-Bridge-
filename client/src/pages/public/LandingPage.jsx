@@ -92,19 +92,7 @@ export default function LandingPage() {
                 className="text-lg mt-4"
                 style={{ color: 'rgba(255,255,255,0.78)', maxWidth: '52ch' }}
               >
-                At Northbridge Bank, integrity and your trust come first. We are committed to secure, reliable banking and exceptional customer service.
-              </p>
-              <p
-                className="text-lg mt-3"
-                style={{ color: 'rgba(255,255,255,0.9)', maxWidth: '52ch', fontWeight: 600 }}
-              >
-                Bank with confidence. Choose Northbridge Bank today!
-              </p>
-              <p
-                className="text-md mt-2"
-                style={{ color: 'rgba(255,255,255,0.85)', maxWidth: '52ch', fontStyle: 'italic' }}
-              >
-                Northbridge Bank — Your Trust, Our Commitment.
+                Explore balances, transfers, statements, and account tools in one place.
               </p>
 
               <div className="hero__actions">
@@ -116,16 +104,6 @@ export default function LandingPage() {
                 </LinkButton>
               </div>
 
-              <p className="text-xs mt-6" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                Need help? Call +1 (800) 555-0142 or email{' '}
-                <a
-                  href="mailto:support.northbridgebank@gmail.com"
-                  style={{ color: '#ffffff' }}
-                >
-                  support.northbridgebank@gmail.com
-                </a>
-                .
-              </p>
             </div>
 
             <div className="hero-card" aria-hidden="true">
@@ -177,7 +155,7 @@ export default function LandingPage() {
             <div className="text-center" style={{ maxWidth: '60ch', margin: '0 auto var(--space-10)' }}>
               <h2 className="text-2xl">Banking Made Simple</h2>
               <p className="muted mt-3">
-                The essentials you'd expect from a trusted bank.
+                The essentials for everyday banking.
               </p>
             </div>
 
