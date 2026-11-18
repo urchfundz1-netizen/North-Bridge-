@@ -10,7 +10,7 @@
  */
 
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../public/AuthLayout.jsx';
 import { PublicHeader } from '../../components/Layout.jsx';
 import { Alert, Button, SecretField, TextField } from '../../components/ui.jsx';
@@ -21,6 +21,7 @@ import { IconLock, IconMail, IconShield } from '../../components/icons.jsx';
 export default function AdminLoginPage() {
   const session = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [runLogin, pending, error] = useAction(session.login);
@@ -44,6 +45,12 @@ export default function AdminLoginPage() {
           variant="dark"
           avatar={IconShield}
         >
+          {location.state?.expired ? (
+            <Alert tone="info" title="Your session expired">
+              For your security you were signed out. Please sign in again.
+            </Alert>
+          ) : null}
+
           {error ? (
             <Alert tone="danger" title="Sign-in failed">
               {error.message}

@@ -24,6 +24,13 @@
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
+/**
+ * These endpoints answer 401 for bad credentials, not for an expired session.
+ * They must not trigger the global "you were signed out" redirect, otherwise a
+ * typo in the password field would look like a session timeout.
+ */
+const CREDENTIAL_ENDPOINTS = new Set(['/api/auth/login', '/api/admin/auth/login']);
+
 let csrfToken = null;
 
 /** Adopt the CSRF token issued with the current session. */
@@ -120,6 +127,16 @@ async function request(method, path, { body, signal, headers: extraHeaders } = {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !CREDENTIAL_ENDPOINTS.has(path)) {
+      setCsrfToken(null);
+      if (typeof window !== 'undefined') {
+        const actor = path.startsWith('/api/admin') ? 'admin' : 'customer';
+        window.dispatchEvent(
+          new CustomEvent('northbridge:session-expired', { detail: { actor } }),
+        );
+      }
+    }
+
     const error = data?.error ?? {};
     throw new ApiError({
       status: response.status,

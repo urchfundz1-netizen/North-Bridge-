@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { customerApi, adminApi, setCsrfToken } from '../api/client.js';
 
 const SessionContext = createContext(null);
@@ -39,6 +39,7 @@ const EMPTY = {
  */
 export function SessionProvider({ actor = 'customer', children }) {
   const api = actor === 'admin' ? adminApi : customerApi;
+  const navigate = useNavigate();
 
   const [state, setState] = useState(EMPTY);
   const [status, setStatus] = useState('loading'); // loading | ready
@@ -73,6 +74,28 @@ export function SessionProvider({ actor = 'customer', children }) {
   useEffect(() => {
     bootstrap();
   }, [bootstrap]);
+
+  /**
+   * Any protected request that answers 401 means the cookie is gone or the
+   * session behind it expired. Clear the in-memory identity and go straight to
+   * the sign-in screen with an explanation; otherwise the app keeps rendering a
+   * signed-in shell around empty data until the next reload.
+   */
+  useEffect(() => {
+    const handleExpired = (event) => {
+      if ((event.detail?.actor ?? 'customer') !== actor) return;
+      setCsrfToken(null);
+      setState(EMPTY);
+      setStatus('ready');
+      navigate(actor === 'admin' ? '/admin/login' : '/login', {
+        replace: true,
+        state: { expired: true },
+      });
+    };
+
+    window.addEventListener('northbridge:session-expired', handleExpired);
+    return () => window.removeEventListener('northbridge:session-expired', handleExpired);
+  }, [actor, navigate]);
 
   /** Adopt a session the server has just issued (login, register). */
   const adopt = useCallback((data) => {
