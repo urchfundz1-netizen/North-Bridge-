@@ -1942,7 +1942,7 @@ button.stat:hover {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 0;
+  padding: 0 0 calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   animation: fade-in var(--dur) var(--ease);
 }
 
@@ -1955,13 +1955,14 @@ button.stat:hover {
 
 .modal {
   background: var(--surface);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  border-radius: var(--radius-xl);
   width: 100%;
   max-width: 560px;
   max-height: 92vh;
   max-height: 92dvh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-xl);
   animation: slide-up var(--dur) var(--ease);
 }
@@ -1986,7 +1987,10 @@ button.stat:hover {
 .modal__body {
   padding: var(--space-5);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal__footer {

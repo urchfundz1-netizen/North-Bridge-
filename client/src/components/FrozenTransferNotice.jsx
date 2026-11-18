@@ -7,7 +7,8 @@ export function FrozenTransferNotice({ open, onClose, accountNumber }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Account temporarily frozen"
+      title="Account Temporarily Frozen"
+      titleClassName="text-center"
       width={520}
       footer={
         <Button variant="secondary" onClick={onClose}>
@@ -20,8 +21,16 @@ export function FrozenTransferNotice({ open, onClose, accountNumber }) {
           Transfers are currently unavailable for the account ending in <strong>{lastFour}</strong>.
         </p>
         <p>
-          Review the account status or contact your administrator if you believe this is a
-          mistake.
+          Your account has been temporarily frozen following the detection of unusual or
+          unrecognized login activity. This precautionary measure has been taken to safeguard your
+          account and prevent potential unauthorized access.
+        </p>
+        <p>
+          Please contact our customer support team for assistance with account verification and the
+          restoration of your account access.
+        </p>
+        <p>
+          Thank you for your cooperation. <strong>Your security remains our priority.</strong>
         </p>
       </div>
     </Modal>

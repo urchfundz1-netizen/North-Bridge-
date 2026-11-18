@@ -602,7 +602,7 @@ export function AsyncBoundary({ loading, error, empty, emptyTitle, onRetry, chil
  * Accessible dialog: focus moves inside on open, is trapped by the backdrop
  * (which closes on Escape), and body scroll is locked while it is shown.
  */
-export function Modal({ open, onClose, title, subtitle, children, footer, width }) {
+export function Modal({ open, onClose, title, subtitle, children, footer, width, titleClassName }) {
   const panelRef = useRef(null);
   const titleId = useId();
   const previouslyFocusedRef = useRef(null);
@@ -671,7 +671,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, width 
       >
         <header className="modal__header">
           <div className="grow">
-            <h2 className="text-lg" id={titleId}>
+            <h2 className={titleClassName ? `text-lg ${titleClassName}` : 'text-lg'} id={titleId}>
               {title}
             </h2>
             {subtitle ? <div className="text-sm muted mt-1">{subtitle}</div> : null}
