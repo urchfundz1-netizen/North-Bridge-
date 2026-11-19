@@ -65,7 +65,10 @@ export async function resolveSession(token, expectedActorType) {
   const row = { id: tokenHash, ...snap.data() };
   if (row.actor_type !== expectedActorType) return null;
   if (row.revoked_at) return null;
-  if (!(row.expires_at > nowIso())) return null;
+  // Numeric comparison: ISO strings differ in precision between `nowIso()`
+  // (whole seconds) and `expiresAt` (milliseconds), which makes a raw string
+  // comparison reject a still-valid session in its final second.
+  if (!(Date.parse(row.expires_at) > Date.now())) return null;
 
   // Best-effort activity tracking; never fail a request over it.
   ref.set({ last_seen_at: nowIso() }, { merge: true }).catch(() => {});
@@ -114,11 +117,15 @@ export function cookieNameFor(actorType) {
 }
 
 export function setSessionCookie(res, actorType, token, expiresAt) {
+  const ttlMs = Math.max(0, Date.parse(expiresAt) - Date.now());
   res.cookie(cookieNameFor(actorType), token, {
     httpOnly: true,
     sameSite: config.cookieSameSite,
     secure: config.cookieSecure,
     path: '/',
+    // Max-Age is honoured more consistently than Expires by proxies and
+    // browsers; sending both keeps older clients working too.
+    maxAge: ttlMs,
     expires: new Date(expiresAt),
   });
 }

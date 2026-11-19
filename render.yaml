@@ -27,8 +27,10 @@ services:
         value: https://north-bridge-hazel.vercel.app
       - key: COOKIE_SECURE
         value: "1"
+      # The Vercel /api/* rewrite makes the API same-origin to the browser, so
+      # Lax is enough and is not dropped as a third-party cookie.
       - key: COOKIE_SAMESITE
-        value: none
+        value: lax
       - key: SESSION_SECRET
         generateValue: true
       - key: FIREBASE_PROJECT_ID

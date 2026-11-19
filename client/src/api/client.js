@@ -31,6 +31,14 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? '';
  */
 const CREDENTIAL_ENDPOINTS = new Set(['/api/auth/login', '/api/admin/auth/login']);
 
+/** Probes used to distinguish a genuinely gone session from a stray 401. */
+const SESSION_ENDPOINTS = {
+  customer: '/api/auth/session',
+  admin: '/api/admin/auth/session',
+};
+
+const verifyingExpiry = new Set();
+
 let csrfToken = null;
 
 /** Adopt the CSRF token issued with the current session. */
@@ -40,6 +48,37 @@ export function setCsrfToken(token) {
 
 export function getCsrfToken() {
   return csrfToken;
+}
+
+/**
+ * A 401 on a protected route is not by itself proof that the session expired:
+ * it can also come from a stale in-flight request during a fresh login, or from
+ * an endpoint that uses 401 for something else. Re-probe the session endpoint
+ * before telling the whole app to sign out. Uses raw fetch deliberately so it
+ * cannot recurse through `request` and trigger another 401 handler.
+ */
+async function signalExpiredIfSignedOut(actor) {
+  if (typeof window === 'undefined' || verifyingExpiry.has(actor)) return;
+  verifyingExpiry.add(actor);
+
+  try {
+    const response = await fetch(`${BASE}${SESSION_ENDPOINTS[actor]}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return;
+
+    const data = await response.json();
+    if (data?.authenticated !== false) return;
+
+    setCsrfToken(null);
+    window.dispatchEvent(new CustomEvent('northbridge:session-expired', { detail: { actor } }));
+  } catch {
+    // A network failure says nothing about the session; leave the UI alone.
+  } finally {
+    verifyingExpiry.delete(actor);
+  }
 }
 
 export class ApiError extends Error {
@@ -128,13 +167,8 @@ async function request(method, path, { body, signal, headers: extraHeaders } = {
 
   if (!response.ok) {
     if (response.status === 401 && !CREDENTIAL_ENDPOINTS.has(path)) {
-      setCsrfToken(null);
-      if (typeof window !== 'undefined') {
-        const actor = path.startsWith('/api/admin') ? 'admin' : 'customer';
-        window.dispatchEvent(
-          new CustomEvent('northbridge:session-expired', { detail: { actor } }),
-        );
-      }
+      const actor = path.startsWith('/api/admin') ? 'admin' : 'customer';
+      signalExpiredIfSignedOut(actor);
     }
 
     const error = data?.error ?? {};

@@ -92,13 +92,15 @@ if (isProduction && sessionSecret.startsWith('dev-only')) {
 const cookieSecure = bool('COOKIE_SECURE', isProduction);
 
 /*
- * Cross-site deployments (client on Vercel, API on Cloud Functions) need
- * `SameSite=None` or the browser withholds the session cookie entirely -
- * login would appear to succeed and then every page would be signed out.
- * `None` is only accepted by browsers over HTTPS with `Secure`, so the
- * combination is validated here rather than discovered in production.
+ * `Lax` is the default: in both supported deployments the browser reaches the
+ * API on its own site (Vite proxy in dev, Vercel `/api/*` rewrite in prod), so
+ * the session cookie is first-party and is sent reliably. `SameSite=None` is
+ * only needed when the client calls a genuinely different site directly; it is
+ * also the mode browsers increasingly treat as third-party and drop, which
+ * looks exactly like "login succeeded, then every page signed me out".
+ * `None` still requires `Secure`, so the combination is validated here.
  */
-const cookieSameSite = str('COOKIE_SAMESITE', 'strict').toLowerCase();
+const cookieSameSite = str('COOKIE_SAMESITE', 'lax').toLowerCase();
 
 if (!['strict', 'lax', 'none'].includes(cookieSameSite)) {
   throw new Error(`COOKIE_SAMESITE must be one of strict, lax or none - got "${cookieSameSite}".`);
@@ -107,6 +109,7 @@ if (!['strict', 'lax', 'none'].includes(cookieSameSite)) {
 if (cookieSameSite === 'none' && !cookieSecure) {
   throw new Error('COOKIE_SAMESITE=none requires COOKIE_SECURE=1; browsers reject insecure SameSite=None cookies.');
 }
+
 
 const rawClientOrigin = str('CLIENT_ORIGIN');
 const clientOrigin = rawClientOrigin || 'http://localhost:5173';
